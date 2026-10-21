@@ -56,6 +56,7 @@ Provider keys are optional. The service never refuses to start because a key is 
 | default_fail_on | Fail threshold used when a request does not give one | high |
 | judge_max_input_tokens | Estimated input token cap per call | tuned to per-minute token limit |
 | ingest_max_bytes, ingest_timeout_seconds, ingest_max_redirects | Ingestion limits | conservative values |
+| ingest_max_tools | Maximum tools per manifest; going over is payload_too_large | 500 |
 | description_length_threshold | Rule threshold for long descriptions | tuned on fixtures |
 | database_path | SQLite file location | local file |
 | service_access_token | Optional shared secret for the API | unset in local use |
@@ -80,19 +81,21 @@ Provider keys are optional. The service never refuses to start because a key is 
 |---|---|
 | server_name | Name reported by the server or supplied by the user |
 | name | Tool name |
+| title | Optional display title from MCP, included in the hash |
 | description | Description text, possibly empty |
 | input_schema | JSON schema describing parameters |
+| input_schema_missing | True when the input had no schema; the schema is then stored as {} |
 | annotations | Optional hints such as read-only or destructive markers |
-| content_hash | Hash of the normalized name, description, schema, and annotations |
+| content_hash | Hash of the normalized name, title, description, schema, missing flag, and annotations |
 
-Normalization rules: trim, normalize Unicode to a single form for hashing only, never alter the original text used as evidence, and sort schema keys for stable hashing.
+Normalization rules: text fields are stored exactly as received. For hashing only, name, title, and description are trimmed, and the canonical JSON (sorted keys) of name, title, description, input schema, the missing flag, and annotations is NFC-normalized and hashed with SHA-256. NFC, not NFKC, keeps look-alike and zero-width characters distinct. The server name is not part of the hash.
 
 ### 4.3 Evidence
 | Field | Description |
 |---|---|
 | field | Which part of the tool: name, description, or a schema path |
 | text | The matched excerpt |
-| start, end | Character positions within the field |
+| start, end | Character (code point) offsets within the field. Clients in UTF-16 environments, such as JavaScript, must convert them. |
 | context | Short surrounding text |
 
 ### 4.4 Finding
@@ -116,8 +119,8 @@ Normalization rules: trim, normalize Unicode to a single form for hashing only, 
 | tool_name | Tool judged |
 | risk_level | Judge's overall severity estimate, restricted to the Severity values (validation rejects anything else) |
 | added_findings | New findings the judge identifies |
-| annotations | Notes on existing deterministic findings, including likely false positive markers |
-| reasoning_summary | Short explanation, bounded in length |
+| annotations | FindingAnnotation items on existing findings: finding ID, likely false positive flag, and a note of up to 300 characters |
+| reasoning_summary | Short explanation, up to 300 characters |
 
 ### 4.6 ScanReport
 | Field | Description |
@@ -126,19 +129,26 @@ Normalization rules: trim, normalize Unicode to a single form for hashing only, 
 | status, verdict | Outcome |
 | fail_on | Fail threshold used for the verdict |
 | tool_count | Number of tools scanned |
-| counts | Finding counts by severity and by category |
+| counts | FindingCounts: counts by severity and by category |
 | findings | All findings after aggregation |
-| tool_results | Per-tool summary including tools with no findings |
-| ai_review_status | performed, partial, skipped, or disabled, with a reason code and a short message |
+| tool_results | ToolResult per tool, including tools with no findings: tool name, content hash, highest severity, finding count, whether AI reviewed it |
+| ai_review_status, ai_review_reason, ai_review_message | performed, partial, skipped, or disabled; the reason code; a short message. Flat fields that match the storage columns |
 | degraded, degraded_reason | True when AI review was skipped or partial; the reason code |
 | unreviewed_tools | Tools that qualified for AI review but did not receive it |
-| ai_usage | Calls and estimated tokens per provider, cache hits |
-| versions | ToolGuard, rule set, prompt, and report schema versions |
+| ai_usage | AIUsage: calls and estimated tokens per provider (ProviderUsage items), cache hits |
+| versions | Versions: ToolGuard, rule set, prompt, and report schema versions |
 
 ## 5. Ingestion Design (ingest)
 
 ### 5.1 Manifest ingestion
 Input: a JSON body or file containing a list of tools, optionally with a server name. Behavior: validate shape, enforce size limits, normalize into Tool models, compute hashes. Invalid entries produce a clear error naming the entry index and field. Partial acceptance is not allowed: if any entry is invalid, ingestion fails with a list of all problems.
+
+Accepted shapes:
+- a bare array of tools;
+- an object with a tools array and an optional server_name (an MCP tools/list result);
+- a full JSON-RPC tools/list response, whose result holds that object.
+
+Tool entries accept MCP field names (inputSchema) and ours (input_schema). Unknown fields are ignored; outputSchema is deferred. A missing schema becomes {} with input_schema_missing set. A present schema that is not a JSON object, or an entry with both schema keys, is invalid input. A manifest with zero tools is invalid input. The byte limit (ingest_max_bytes) and the tool limit (ingest_max_tools) raise payload_too_large. A server name supplied with the request overrides the manifest's; the fallback is "unknown".
 
 ### 5.2 Remote ingestion (HTTP)
 Input: a server URL. Behavior: validate the URL, resolve the host, reject private, loopback, link-local, and otherwise internal addresses (checked after resolution and again on every redirect), connect with the MCP SDK over HTTP, request the tool list only, and normalize results. The connection never invokes any tool. Limits: total bytes, total time, redirect count. Failures map to the ingestion error types in section 13.
@@ -169,7 +179,7 @@ A rule has: an ID, a category, a default severity, a short description, and an e
 | TG-XTL-001 | cross_tool | medium | Description that directs how other tools must be used |
 | TG-XTL-002 | cross_tool | medium | Instruction to call another tool before or after this one |
 | TG-SCH-001 | excessive_permissions | medium | Unconstrained free-form parameters such as command, path, query, url, or code |
-| TG-SCH-002 | excessive_permissions | low | Missing type or description on parameters |
+| TG-SCH-002 | excessive_permissions | low | Missing type or description on parameters, or no input schema at all |
 | TG-SCH-003 | excessive_permissions | low | Schema accepts arbitrary additional properties |
 | TG-SCH-004 | excessive_permissions | medium | Destructive-sounding tool without a destructive or read-only hint |
 | TG-NAM-001 | naming | medium | Duplicate or colliding tool names within a scan |
@@ -501,6 +511,8 @@ CI is served by the API, not by a separate tool. A pipeline submits a scan with 
 | Live smoke | One rarely run manual test against real providers to confirm structured output, the model loop, and the Groq header refill behavior |
 
 Coverage targets: every rule and every authority rule must have tests. Fixture corpus metrics (detection and false positive rates) are reported by the pytest fixture regression suite.
+
+Fixture format and metric definitions: tests/fixtures/README.md.
 
 ## 23. Deployment Design
 

@@ -68,7 +68,7 @@ Stages:
 6. Render reports and persist.
 
 ### 3.4 Ingestion
-- Manifest ingestion: parse a JSON tool list into the internal tool model.
+- Manifest ingestion: parse a JSON tool list into the internal tool model. Accepts a bare tool array, an MCP tools/list result, or a full JSON-RPC response, so a server's real output can be pasted directly.
 - Remote ingestion: connect to an MCP server over HTTP using the official MCP Python SDK, list its tools, and normalize them. Guard against private network addresses, large responses, long redirects, and timeouts.
 - The MVP does not launch local stdio servers, because that would execute untrusted code. A sandboxed approach is a later feature.
 
@@ -129,7 +129,7 @@ Structured logs for each stage with timings and AI usage. Pydantic AI emits Open
 
 | Entity | Key fields |
 |---|---|
-| Tool | server name, tool name, description, input schema, annotations, content hash |
+| Tool | server name, tool name, title, description, input schema, input schema missing flag, annotations, content hash |
 | Finding | ID, source (rule or judge), rule ID, category, severity, tool name, evidence text and position, explanation, confidence, review note |
 | Judge verdict | tool name, verdict, added findings, severity adjustments, false positive notes |
 | Scan | ID, target, status, current stage, fail_on threshold, timestamps, tool count, overall severity, verdict, AI review status and reason, degraded flag, AI usage summary |

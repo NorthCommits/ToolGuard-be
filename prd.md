@@ -175,7 +175,7 @@ Every rule has an ID, severity, category, explanation, and a link between the fi
 These match instruction.md section 8 and sdd.md section 24.
 
 1. M0 (done): Verification spikes and project setup: uv project, settings from environment, empty package structure, provider spikes. Findings in spikes/FINDINGS.md.
-2. M1: Domain models, manifest ingestion with content hashing, and the first fixture corpus.
+2. M1 (done): Domain models, manifest ingestion with content hashing, and the first fixture corpus.
 3. M2: Deterministic rule engine with evidence positions and tests for each rule.
 4. M3: SQLite storage and the scan pipeline without AI, including JSON and Markdown reports.
 5. M4: Model layer with Groq primary and OpenRouter fallback models, rate limiting, header-driven budget ledger, cache, and fake-model tests.

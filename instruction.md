@@ -70,6 +70,7 @@ These rules come from the owner's standing preferences. Follow them strictly.
 6. Do not commit, push, or create branches unless the owner asks. When asked to commit, use short plain commit messages.
 7. Do not delete files or rewrite existing design documents without asking. If a document needs correction, propose the exact change and wait.
 8. If something would cost money, use paid services, or require the owner to buy credits, stop and ask.
+9. At the end of every milestone, update the README.md roadmap table and its Completed, Work in progress, and Later stages lists so they match reality, and say so in the milestone report.
 
 ## 6. Hard Rules for the Code
 
@@ -146,7 +147,7 @@ Purpose: settle the open technical questions before building on them.
 
 Done when: project runs, tests pass (even if trivial), spike findings are reported, and open questions in sdd.md are answered or re-stated.
 
-### M1: Domain models, manifest ingestion, first fixtures
+### M1: Domain models, manifest ingestion, first fixtures (done)
 - Typed models from sdd.md section 4.
 - Manifest ingestion and normalization with content hashing.
 - A first fixture corpus: one clean manifest, one with hidden instructions, one with weak schemas, plus a few small targeted ones.
