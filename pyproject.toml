@@ -1,0 +1,31 @@
+[project]
+name = "toolguard"
+version = "0.1.0"
+description = "Security scanner and regression harness for MCP server tools"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.156.4",
+    "mcp>=2.3.0",
+    "pydantic-ai-slim[groq,openrouter]>=2.59.0",
+    "pydantic-settings>=2.16.1",
+]
+
+[build-system]
+requires = ["uv_build>=0.9.26,<0.10"]
+build-backend = "uv_build"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "SIM"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+    "ruff>=0.17.1",
+]

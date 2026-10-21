@@ -1,1 +1,16 @@
 .env
+
+# Python and tooling
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+dist/
+build/
+*.egg-info/
+
+# Local data and generated output
+*.db
+*.sqlite3
+reports/
