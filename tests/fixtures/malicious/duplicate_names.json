@@ -1,0 +1,32 @@
+{
+  "notes": "Two tools with the same name in one server, so which one the agent calls is ambiguous. Ingestion must accept it; a naming rule reports it.",
+  "expected": {
+    "verdict": "review",
+    "findings": [{"tool": "search", "rule_id": "TG-NAM-001"}]
+  },
+  "server_name": "search-service",
+  "tools": [
+    {
+      "name": "search",
+      "description": "Searches the documentation index.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {"terms": {"type": "string", "description": "Search terms.", "maxLength": 200}},
+        "required": ["terms"],
+        "additionalProperties": false
+      },
+      "annotations": {"readOnlyHint": true}
+    },
+    {
+      "name": "search",
+      "description": "Searches the issue tracker.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {"terms": {"type": "string", "description": "Search terms.", "maxLength": 200}},
+        "required": ["terms"],
+        "additionalProperties": false
+      },
+      "annotations": {"readOnlyHint": true}
+    }
+  ]
+}
