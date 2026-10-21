@@ -43,6 +43,7 @@ class Settings(BaseSettings):
     ingest_max_bytes: int = 1_000_000
     ingest_timeout_seconds: float = 15.0
     ingest_max_redirects: int = 3
+    ingest_max_tools: int = 500
     description_length_threshold: int = 2_000
 
     database_path: Path = Path("toolguard.db")

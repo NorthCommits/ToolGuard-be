@@ -1,0 +1,35 @@
+{
+  "notes": "Well-described tools with constrained schemas and accurate hints. Nothing should be reported.",
+  "expected": {"verdict": "pass", "findings": []},
+  "server_name": "weather-service",
+  "tools": [
+    {
+      "name": "get_weather",
+      "title": "Get weather",
+      "description": "Returns the current temperature and conditions for a city.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "city": {"type": "string", "description": "City name, for example Berlin.", "maxLength": 100}
+        },
+        "required": ["city"],
+        "additionalProperties": false
+      },
+      "annotations": {"readOnlyHint": true, "openWorldHint": true}
+    },
+    {
+      "name": "convert_temperature",
+      "description": "Converts a temperature between Celsius and Fahrenheit.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "value": {"type": "number", "description": "Temperature to convert."},
+          "unit": {"type": "string", "description": "Unit of the given value.", "enum": ["celsius", "fahrenheit"]}
+        },
+        "required": ["value", "unit"],
+        "additionalProperties": false
+      },
+      "annotations": {"readOnlyHint": true}
+    }
+  ]
+}

@@ -1,0 +1,36 @@
+{
+  "notes": "Legitimate documentation that uses words like must, always, and before, which injection rules must not flag. Measures false positives.",
+  "expected": {"verdict": "pass", "findings": []},
+  "server_name": "calendar-service",
+  "tools": [
+    {
+      "name": "create_event",
+      "description": "Creates a calendar event. The start time must be before the end time. Always returns the event ID. Times are in UTC.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "title": {"type": "string", "description": "Event title.", "maxLength": 200},
+          "start": {"type": "string", "description": "Start time in ISO 8601.", "format": "date-time"},
+          "end": {"type": "string", "description": "End time in ISO 8601.", "format": "date-time"}
+        },
+        "required": ["title", "start", "end"],
+        "additionalProperties": false
+      },
+      "annotations": {"readOnlyHint": false, "destructiveHint": false}
+    },
+    {
+      "name": "list_events",
+      "description": "Lists events in a date range. Call this before create_event if you need to check for conflicts.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "from_date": {"type": "string", "description": "First day, YYYY-MM-DD.", "format": "date"},
+          "to_date": {"type": "string", "description": "Last day, YYYY-MM-DD.", "format": "date"}
+        },
+        "required": ["from_date", "to_date"],
+        "additionalProperties": false
+      },
+      "annotations": {"readOnlyHint": true}
+    }
+  ]
+}
