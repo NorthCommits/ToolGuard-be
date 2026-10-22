@@ -17,6 +17,8 @@ from toolguard.core.errors import InvalidInput, PayloadTooLarge, Problem
 from toolguard.core.models import Tool
 
 DEFAULT_SERVER_NAME = "unknown"
+# An explicit limit, so acceptance does not depend on the Python version's recursion limits.
+MAX_NESTING_DEPTH = 64
 
 
 def content_hash(
@@ -42,7 +44,9 @@ def content_hash(
         "annotations": annotations,
     }
     canonical = json.dumps(payload, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
-    return hashlib.sha256(unicodedata.normalize("NFC", canonical).encode("utf-8")).hexdigest()
+    # surrogatepass: JSON allows lone surrogate escapes; keep them (a rule reports them).
+    normalized = unicodedata.normalize("NFC", canonical)
+    return hashlib.sha256(normalized.encode("utf-8", "surrogatepass")).hexdigest()
 
 
 def build_tool(
@@ -80,6 +84,10 @@ def parse_manifest(
         raise PayloadTooLarge(f"The manifest is larger than the {max_bytes} byte limit.")
     try:
         document = json.loads(raw.decode("utf-8-sig"), parse_constant=_reject_constant)
+        if _depth_exceeds(document, MAX_NESTING_DEPTH):
+            raise InvalidInput(
+                f"The manifest is nested too deeply (more than {MAX_NESTING_DEPTH} levels)."
+            )
         return _tools_from_document(document, max_tools, server_name)
     except UnicodeDecodeError:
         raise InvalidInput("The manifest must be UTF-8 encoded JSON.") from None
@@ -88,6 +96,19 @@ def parse_manifest(
         raise InvalidInput("The manifest is not valid JSON.", [problem]) from None
     except RecursionError:
         raise InvalidInput("The manifest is nested too deeply.") from None
+
+
+def _depth_exceeds(document: Any, limit: int) -> bool:
+    """True when JSON containers nest deeper than limit. Iterative, so it cannot overflow."""
+    stack = [(document, 1)]
+    while stack:
+        node, depth = stack.pop()
+        if isinstance(node, dict | list):
+            if depth > limit:
+                return True
+            children = node.values() if isinstance(node, dict) else node
+            stack.extend((child, depth + 1) for child in children)
+    return False
 
 
 def _reject_constant(name: str) -> None:

@@ -4,7 +4,7 @@ from typing import Any
 import pytest
 
 from toolguard.core.errors import InvalidInput, PayloadTooLarge
-from toolguard.ingest.manifest import build_tool, parse_manifest
+from toolguard.ingest.manifest import MAX_NESTING_DEPTH, build_tool, parse_manifest
 
 SCHEMA = {"type": "object", "properties": {"city": {"type": "string"}}}
 
@@ -83,13 +83,19 @@ def test_missing_schema_becomes_empty_and_is_flagged() -> None:
 
 
 def test_duplicate_names_and_hidden_characters_are_accepted() -> None:
-    tools = parse([tool_entry(), tool_entry(), tool_entry(name="get​_weather")])
+    tools = parse([tool_entry(), tool_entry(), tool_entry(name="get\u200b_weather")])
     assert len(tools) == 3
-    assert tools[2].name == "get​_weather"
+    assert tools[2].name == "get\u200b_weather"
+
+
+def test_lone_surrogate_is_accepted_and_hashed() -> None:
+    tools = parse(b'[{"name": "a\\ud800b"}]')
+    assert tools[0].name == "a\ud800b"
+    assert tools[0].content_hash != build_tool("s", "ab").content_hash
 
 
 def test_original_text_is_kept_unchanged() -> None:
-    description = "  Weather.​ <b>x</b>\n"
+    description = "  Weather.\u200b <b>x</b>\n"
     tool = parse([tool_entry(description=description)])[0]
     assert tool.description == description
 
@@ -183,17 +189,17 @@ def test_hash_ignores_key_order_and_outer_whitespace() -> None:
 
 
 def test_hash_is_stable_across_unicode_composition() -> None:
-    composed = build_tool("s", "t", None, "café")
-    decomposed = build_tool("s", "t", None, "café")
+    composed = build_tool("s", "t", None, "caf\u00e9")
+    decomposed = build_tool("s", "t", None, "cafe\u0301")
     assert composed.content_hash == decomposed.content_hash
 
 
 @pytest.mark.parametrize(
     "changed",
     [
-        {"name": "t​"},
-        {"name": "т"},  # Cyrillic look-alike of t
-        {"description": "Weather.‮"},
+        {"name": "t\u200b"},
+        {"name": "\u0442"},  # Cyrillic look-alike of t
+        {"description": "Weather.\u202e"},
         {"title": "Weather"},
         {"input_schema": {"type": "object"}},
         {"annotations": {"readOnlyHint": True}},
@@ -213,3 +219,15 @@ def test_hash_tells_missing_schema_from_empty_schema() -> None:
 
 def test_hash_ignores_server_name() -> None:
     assert build_tool("a", "t").content_hash == build_tool("b", "t").content_hash
+
+
+def test_nesting_limit_is_explicit() -> None:
+    def nested(depth: int) -> dict[str, Any]:
+        schema: dict[str, Any] = {}
+        for _ in range(depth - 3):  # the array, the entry, and inputSchema add three levels
+            schema = {"x": schema}
+        return schema
+
+    assert parse([tool_entry(inputSchema=nested(MAX_NESTING_DEPTH))])
+    with pytest.raises(InvalidInput, match="nested too deeply"):
+        parse([tool_entry(inputSchema=nested(MAX_NESTING_DEPTH + 1))])
