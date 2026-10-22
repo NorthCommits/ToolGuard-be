@@ -164,7 +164,7 @@ Every rule has an ID, severity, category, explanation, and a link between the fi
 
 ## 11. Success Metrics (initial targets, to be tuned)
 
-- Detection quality on the project's own fixture corpus: at least 90 percent of seeded malicious fixtures flagged, and under 10 percent of benign fixtures falsely flagged.
+- Detection quality on the project's own fixture corpus: a detection rate of at least 90 percent and a false positive rate under 10 percent. A malicious fixture counts as detected when every expected finding is reported and the verdict equals the expected verdict; a benign fixture is a false positive when its verdict is not pass. The number of benign fixtures with any finding is also shown, for information only.
 - AI efficiency: average of three or fewer AI calls per scan, with cache hits on repeated scans.
 - Reliability: zero failed scans caused only by quota exhaustion or provider errors.
 - Developer experience: a new user can start the service and scan a sample manifest through the API in under five minutes following the README.
@@ -176,11 +176,11 @@ These match instruction.md section 8 and sdd.md section 24.
 
 1. M0 (done): Verification spikes and project setup: uv project, settings from environment, empty package structure, provider spikes. Findings in spikes/FINDINGS.md.
 2. M1 (done): Domain models, manifest ingestion with content hashing, and the first fixture corpus.
-3. M2: Deterministic rule engine with evidence positions and tests for each rule.
+3. M2 (done): Deterministic rule engine with evidence positions, tests for each rule, and the fixture regression suite on rule output.
 4. M3: SQLite storage and the scan pipeline without AI, including JSON and Markdown reports.
 5. M4: Model layer with Groq primary and OpenRouter fallback models, rate limiting, header-driven budget ledger, cache, and fake-model tests.
 6. M5: Deterministic triage and the LLM judge with its model loop, authority rules, degraded scan handling, the unreviewed tools list, and token estimate calibration.
-7. M6: Frontend-ready HTTP API and the pytest fixture regression harness with detection and false positive rates.
+7. M6: Frontend-ready HTTP API. The fixture regression suite exists from M2 and runs the full pipeline from M3.
 8. M7: Remote MCP server ingestion over HTTP, hardening, README, deployment, and design write-up.
 
 ## 13. Risks and Mitigations

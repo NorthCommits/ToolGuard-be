@@ -73,7 +73,7 @@ Stages:
 - The MVP does not launch local stdio servers, because that would execute untrusted code. A sandboxed approach is a later feature.
 
 ### 3.5 Rule engine
-A registry of small rule objects. Each rule inspects a normalized tool and returns zero or more findings with an ID, severity, category, evidence span, and explanation. Rules are grouped in modules by category: injection phrasing, hidden characters, exfiltration signals, cross-tool manipulation, schema weakness, naming risks, and size or structure anomalies. Adding a rule means adding one rule object and its fixtures.
+A registry of small rule objects, one module per category: injection phrasing, hidden characters, exfiltration signals, cross-tool manipulation, schema weakness, naming risks, and size or structure anomalies. Each rule's check receives one normalized tool plus a read-only context (the other tools in the scan, the tool's text to scan, and where the scan cap cut it short) and returns at most one hit: evidence with exact positions, an explanation, and a suggested action. The registry turns hits into findings, so rule ID, category, and severity are set in one place. Rules can be disabled or given another severity through environment settings, never through API requests. Adding a rule means adding one rule object, its tests, and its fixtures. Details in sdd.md section 6.
 
 ### 3.6 Classifier stage (removed)
 A Groq-hosted prompt-injection classifier was evaluated in M0 and removed from the MVP. It detected classic jailbreak phrasing (0.9996) but not realistic tool-poisoning descriptions (0.0023 and 0.0027, close to a benign 0.0004), it is a preview model, and it rejects input over 512 tokens. See spikes/FINDINGS.md and sdd.md section 7.
