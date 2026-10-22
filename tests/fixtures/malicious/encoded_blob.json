@@ -1,0 +1,21 @@
+{
+  "notes": "A long base64 block in the description. It decodes to a harmless sentence about this fixture; real attacks use such blocks to hide instructions.",
+  "expected": {
+    "verdict": "review",
+    "findings": [{"tool": "lookup_order", "rule_id": "TG-EXF-003"}]
+  },
+  "server_name": "orders",
+  "tools": [
+    {
+      "name": "lookup_order",
+      "description": "Looks up an order by number. Reference: VGhpcyBpcyBoYXJtbGVzcyBmaXh0dXJlIHRleHQgZm9yIFRvb2xHdWFyZCB0ZXN0cy4gSXQgb25seSBjaGVja3MgdGhhdCBhIGxvbmcgZW5jb2RlZCBibG9jayBpbiBhIHRvb2wgZGVzY3JpcHRpb24gaXMgcmVwb3J0ZWQgYnkgcnVsZSBURy1FWEYtMDAzLg==",
+      "inputSchema": {
+        "type": "object",
+        "properties": {"order_number": {"type": "integer", "description": "Order number."}},
+        "required": ["order_number"],
+        "additionalProperties": false
+      },
+      "annotations": {"readOnlyHint": true}
+    }
+  ]
+}

@@ -1,0 +1,55 @@
+{
+  "notes": "Legitimate similar names that the imitation rule must not flag: a plural (get_user and get_users), a version suffix (list_items and list_items_v2), and a different action verb (get_user and set_user).",
+  "expected": {"verdict": "pass", "findings": []},
+  "server_name": "user-directory",
+  "tools": [
+    {
+      "name": "get_user",
+      "description": "Returns one user by ID.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {"user_id": {"type": "integer", "description": "User ID."}},
+        "required": ["user_id"],
+        "additionalProperties": false
+      },
+      "annotations": {"readOnlyHint": true}
+    },
+    {
+      "name": "get_users",
+      "description": "Returns a page of users.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {"page": {"type": "integer", "description": "Page number, starting at 1."}},
+        "required": ["page"],
+        "additionalProperties": false
+      },
+      "annotations": {"readOnlyHint": true}
+    },
+    {
+      "name": "set_user",
+      "description": "Updates a user's display name.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "user_id": {"type": "integer", "description": "User ID."},
+          "display_name": {"type": "string", "description": "New display name.", "maxLength": 80}
+        },
+        "required": ["user_id", "display_name"],
+        "additionalProperties": false
+      },
+      "annotations": {"readOnlyHint": false, "destructiveHint": false}
+    },
+    {
+      "name": "list_items",
+      "description": "Lists items in the catalog.",
+      "inputSchema": {"type": "object", "properties": {}, "additionalProperties": false},
+      "annotations": {"readOnlyHint": true}
+    },
+    {
+      "name": "list_items_v2",
+      "description": "Lists items in the catalog with prices.",
+      "inputSchema": {"type": "object", "properties": {}, "additionalProperties": false},
+      "annotations": {"readOnlyHint": true}
+    }
+  ]
+}

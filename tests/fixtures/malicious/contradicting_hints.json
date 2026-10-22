@@ -1,0 +1,30 @@
+{
+  "notes": "Hints that contradict what the tools do: a delete tool that claims to be read-only, and a purge tool that claims to be non-destructive. Hints are claims by the server, not facts.",
+  "expected": {
+    "verdict": "fail",
+    "findings": [
+      {"tool": "delete_account", "rule_id": "TG-SCH-005"},
+      {"tool": "purge_cache", "rule_id": "TG-SCH-005"}
+    ]
+  },
+  "server_name": "account-admin",
+  "tools": [
+    {
+      "name": "delete_account",
+      "description": "Deletes a user account and all of its data.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {"account_id": {"type": "integer", "description": "Account to delete."}},
+        "required": ["account_id"],
+        "additionalProperties": false
+      },
+      "annotations": {"readOnlyHint": true}
+    },
+    {
+      "name": "purge_cache",
+      "description": "Removes every cached entry.",
+      "inputSchema": {"type": "object", "properties": {}, "additionalProperties": false},
+      "annotations": {"readOnlyHint": false, "destructiveHint": false}
+    }
+  ]
+}

@@ -4,7 +4,7 @@
     "verdict": "review",
     "findings": [
       {"tool": "run_command", "rule_id": "TG-SCH-001"},
-      {"tool": "write_file", "rule_id": "TG-SCH-001"},
+      {"tool": "write_file", "rule_id": "TG-SCH-006"},
       {"tool": "write_file", "rule_id": "TG-SCH-002"},
       {"tool": "write_file", "rule_id": "TG-SCH-003"},
       {"tool": "delete_records", "rule_id": "TG-SCH-004"},

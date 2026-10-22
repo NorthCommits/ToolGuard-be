@@ -1,0 +1,40 @@
+{
+  "notes": "Legitimate text that resembles risky patterns: a documentation link (not a send instruction), Hebrew and Arabic text without direction control characters, and a tool name written entirely in Cyrillic (one script, not mixed).",
+  "expected": {"verdict": "pass", "findings": []},
+  "server_name": "docs-and-translation",
+  "tools": [
+    {
+      "name": "get_guide",
+      "description": "Returns a section of the user guide. See https://docs.example.com/guide for the full text.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {"section": {"type": "string", "description": "Section name.", "enum": ["install", "usage", "faq"]}},
+        "required": ["section"],
+        "additionalProperties": false
+      },
+      "annotations": {"readOnlyHint": true}
+    },
+    {
+      "name": "translate_text",
+      "description": "Translates short text, for example \u05e9\u05dc\u05d5\u05dd or \u0645\u0631\u062d\u0628\u0627, into English.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {"text": {"type": "string", "description": "Text to translate.", "maxLength": 2000}},
+        "required": ["text"],
+        "additionalProperties": false
+      },
+      "annotations": {"readOnlyHint": true}
+    },
+    {
+      "name": "\u043f\u043e\u0438\u0441\u043a",
+      "description": "Searches the Russian language help pages.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {"terms": {"type": "string", "description": "Search terms.", "maxLength": 200}},
+        "required": ["terms"],
+        "additionalProperties": false
+      },
+      "annotations": {"readOnlyHint": true}
+    }
+  ]
+}

@@ -4,13 +4,12 @@ import json
 from pathlib import Path
 
 import pytest
+from fixture_corpus import FIXTURE_FILES, HELDOUT_FILES
 from pydantic import BaseModel, Field
 
-from toolguard.core.models import Verdict
+from toolguard.core.models import Severity, Verdict
 from toolguard.ingest.manifest import parse_manifest
-
-FIXTURES = Path(__file__).parents[1] / "fixtures"
-FIXTURE_FILES = sorted(FIXTURES.glob("*/*.json"))
+from toolguard.rules.registry import RULES_BY_ID
 
 
 class ExpectedFinding(BaseModel):
@@ -28,7 +27,9 @@ def test_corpus_has_both_folders() -> None:
     assert folders == {"benign", "malicious"}
 
 
-@pytest.mark.parametrize("path", FIXTURE_FILES, ids=lambda p: f"{p.parent.name}/{p.name}")
+@pytest.mark.parametrize(
+    "path", FIXTURE_FILES + HELDOUT_FILES, ids=lambda p: f"{p.parent.name}/{p.name}"
+)
 def test_fixture_ingests_and_expectations_are_valid(path: Path) -> None:
     raw = path.read_bytes()
     tools = parse_manifest(raw, max_bytes=1_000_000, max_tools=500)
@@ -38,10 +39,14 @@ def test_fixture_ingests_and_expectations_are_valid(path: Path) -> None:
 
     tool_names = {tool.name for tool in tools}
     assert {finding.tool for finding in expected.findings} <= tool_names
+    assert {finding.rule_id for finding in expected.findings} <= RULES_BY_ID.keys()
 
     if path.parent.name == "benign":
         assert expected.verdict is Verdict.PASS
         assert expected.findings == []
-    else:
-        assert expected.verdict in (Verdict.REVIEW, Verdict.FAIL)
-        assert expected.findings
+        return
+    assert expected.findings
+    if expected.verdict is Verdict.PASS:
+        # Allowed only when every expected rule is low or info severity by default.
+        severities = {RULES_BY_ID[f.rule_id].severity for f in expected.findings}
+        assert max(severities) <= Severity.LOW
