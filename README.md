@@ -4,7 +4,7 @@ A security scanner and regression harness for the tools that MCP (Model Context 
 
 [![CI](https://github.com/NorthCommits/ToolGuard-be/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/NorthCommits/ToolGuard-be/actions/workflows/ci.yml)
 
-**Status: work in progress (WIP).** Milestones M0 and M1 are done. The next milestone is M2, the deterministic rule engine. There is no API and no way to run a scan yet.
+**Status: work in progress (WIP).** Milestones M0, M1, and M2 are done. The next milestone is M3: storage, the scan pipeline without AI, and reports. There is no API and no way to run a scan yet.
 
 ## What ToolGuard is
 
@@ -28,26 +28,27 @@ Scans run as a layered pipeline. Deterministic rules check every tool first, at 
 |---|---|---|
 | M0 | Done | Project setup, settings, and provider verification spikes |
 | M1 | Done | Domain models, manifest ingestion, and the first fixture corpus |
-| M2 | Planned | Deterministic rule engine with evidence positions |
+| M2 | Done | Deterministic rule engine with evidence positions |
 | M3 | Planned | SQLite storage, the scan pipeline without AI, and JSON and Markdown reports |
 | M4 | Planned | Model layer, budget ledger, and cache, tested with fake models |
 | M5 | Planned | Deterministic triage and the AI judge with its model loop |
-| M6 | Planned | Frontend-ready HTTP API and the fixture regression suite |
+| M6 | Planned | Frontend-ready HTTP API |
 | M7 | Planned | Remote MCP ingestion over HTTP, hardening, and deployment |
 
 ### Completed
 
 - M0: uv project with pinned dependencies, ruff, and pytest; the empty package structure; a settings module with optional provider keys and offline tests; five manual spike scripts and their findings (spikes/FINDINGS.md), which settled the judge output mode, removed the classifier stage, and shaped the quota design.
 - M1: typed domain models (tool, finding, evidence, judge verdict, scan report); manifest ingestion that accepts a bare tool array, an MCP tools/list result, or a full JSON-RPC response, reports all problems at once, enforces size and tool-count limits, and computes a content hash; a first fixture corpus of 2 benign and 6 malicious manifests.
+- M2: a deterministic rule engine with 24 rules (the sdd.md catalog, including TG-SCH-005 and TG-SCH-007 for misleading hints, TG-SCH-006 for unconstrained paths and addresses, TG-SIZ-003 for text past the scan cap, and TG-INJ-004 for text that lifts the model's earlier guidance) covering injection, hidden characters, exfiltration, cross-tool manipulation, schema weakness, naming, and structure. Text rules scan the name, title, description, annotations, and every string and property name in the input schema. Text rules match a folded copy of the text (invisible characters removed, look-alike letters mapped to Latin, compatibility forms folded, and schema words split at underscores and camelCase), while findings carry exact character offsets into the original text, short context, and invisible characters shown by name. Rules can be disabled or given another severity through settings. The fixture corpus grew to 5 benign and 26 malicious manifests, and a pytest regression suite reports the detection and false positive rates. A held-out set of hostile fixtures, written after the rules, measures overfitting and is reported on its own: the first batch (0 of 9 detected on its first run) was used for tuning and moved into the regression tests, and the current batch of 11 was detected 2 of 11 on its first run. Calibration manifests from real servers (the MCP reference servers, Playwright, and GitHub) are used to judge false positives by eye. Tests check every rule for speed on hostile input and for robustness on odd input.
 - CI: a GitHub Actions workflow runs ruff and pytest on Python 3.11 and 3.12 for every pull request to main and every push to main.
 
 ### Work in progress
 
-- Nothing is in progress. M2 (the deterministic rule engine) is the next milestone.
+- Nothing is in progress. M3 (storage, the scan pipeline without AI, and reports) is the next milestone.
 
 ### Later stages
 
-- M2 to M7 as listed in the table.
+- M3 to M7 as listed in the table.
 - After the first version: change detection between scans, sandboxed scanning of local servers, a GitHub Action that calls the API, and streaming scan progress.
 
 ## Tech stack
@@ -104,18 +105,23 @@ ToolGuard-be/
   pyproject.toml  uv.lock  .python-version  .env.example
   src/toolguard/
     config.py           settings from the environment
-    core/               models.py (domain models), errors.py (error codes)
+    core/               models.py (domain models), errors.py (error codes), scoring.py (verdict)
     ingest/             manifest.py (manifest ingestion and content hashing)
-    api/  llm/  reporting/  rules/  storage/
+    rules/              registry.py (engine and catalog), one module per rule category
+    api/  llm/  reporting/  storage/
   tests/
-    unit/               settings, models, manifest, and fixture tests
+    conftest.py         prints the fixture corpus metrics after each run
+    unit/               settings, models, manifest, scoring, fixture, and regression tests
+      rules/            positive and negative cases for every rule, plus speed and robustness tests
     fixtures/
       benign/           known-good manifests
       malicious/        manifests with expected findings
+      heldout/          hostile manifests written after the rules, reported separately
+    calibration/        real servers' tool lists, licenses, and a script that prints all findings
   spikes/               M0 verification scripts and FINDINGS.md
 ```
 
-The api, llm, reporting, rules, and storage packages are still empty. They are filled in by milestones M2 to M7.
+The api, llm, reporting, and storage packages are still empty. They are filled in by milestones M3 to M7.
 
 ## Documentation
 
@@ -128,7 +134,9 @@ The api, llm, reporting, rules, and storage packages are still empty. They are f
 
 ## Fixtures and regression metrics
 
-tests/fixtures/ holds JSON manifests with the expected verdict and findings for each. From M6, a pytest regression suite will run the full pipeline over them and report two numbers: the detection rate on malicious/ fixtures, and the false positive rate, measured on benign/ only. See tests/fixtures/README.md for the format and the exact definitions.
+tests/fixtures/ holds JSON manifests with the expected verdict and findings for each. A pytest regression suite runs the rules over them and prints the detection rate on malicious/ fixtures, the false positive rate on benign/ fixtures only, and, for information, how many benign fixtures had any finding. From M3 the same suite will run the full pipeline. The held-out set in tests/fixtures/heldout/ is reported separately and not counted in these rates.
+
+Limitation: the same author wrote the rules and the fixtures, so the main detection rate mostly shows that the rules match the cases they were written for. The held-out set is a better estimate of real coverage, but it is still an estimate, not a guarantee: on its first run the current batch was detected 2 of 11. Rules miss obfuscated and novel wording by design; the AI judge (M5) is meant to catch what they miss, and reports show which tools were checked by rules only. See tests/fixtures/README.md for the format and the exact definitions, and tests/calibration/README.md for the calibration sources.
 
 ## Free tier note
 

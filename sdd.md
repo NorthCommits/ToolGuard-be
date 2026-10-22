@@ -57,6 +57,8 @@ Provider keys are optional. The service never refuses to start because a key is 
 | judge_max_input_tokens | Estimated input token cap per call | tuned to per-minute token limit |
 | ingest_max_bytes, ingest_timeout_seconds, ingest_max_redirects | Ingestion limits | conservative values |
 | ingest_max_tools | Maximum tools per manifest; going over is payload_too_large | 500 |
+| rules_disabled | Rule IDs to turn off. Read from the environment only, never from API requests; an unknown ID fails at startup with a message naming the setting and the ID | empty |
+| rules_severity_overrides | Rule ID to severity, replacing the default severity of a rule finding. Environment only, checked like rules_disabled | empty |
 | description_length_threshold | Rule threshold for long descriptions | tuned on fixtures |
 | database_path | SQLite file location | local file |
 | service_access_token | Optional shared secret for the API | unset in local use |
@@ -150,6 +152,8 @@ Accepted shapes:
 
 Tool entries accept MCP field names (inputSchema) and ours (input_schema). Unknown fields are ignored; outputSchema is deferred. A missing schema becomes {} with input_schema_missing set. A present schema that is not a JSON object, or an entry with both schema keys, is invalid input. A manifest with zero tools is invalid input. The byte limit (ingest_max_bytes) and the tool limit (ingest_max_tools) raise payload_too_large. A server name supplied with the request overrides the manifest's; the fallback is "unknown".
 
+Nesting is limited to 64 levels of JSON containers (MAX_NESTING_DEPTH), checked without recursion, so the accepted depth does not depend on the Python version; deeper input is invalid input ("nested too deeply"). Lone surrogate escapes, which JSON allows, are kept in the text and hashed safely; TG-HID-001 reports them.
+
 ### 5.2 Remote ingestion (HTTP)
 Input: a server URL. Behavior: validate the URL, resolve the host, reject private, loopback, link-local, and otherwise internal addresses (checked after resolution and again on every redirect), connect with the MCP SDK over HTTP, request the tool list only, and normalize results. The connection never invokes any tool. Limits: total bytes, total time, redirect count. Failures map to the ingestion error types in section 13.
 
@@ -161,7 +165,13 @@ Local stdio servers are not launched in the first version.
 ## 6. Rule Engine Design (rules)
 
 ### 6.1 Rule contract
-A rule has: an ID, a category, a default severity, a short description, and an evaluation behavior that takes a Tool and returns zero or more Findings. Rules are pure: no network, no model, no shared mutable state. A registry lists rules and supports enable, disable, and severity override through configuration.
+A rule has: an ID, a category, a default severity, a short description, and a check. The check takes one Tool and a read-only context (all tools in the scan, the tool's text fields to scan, the field where the scan cap cut the text short if any, and the description length threshold) and returns either nothing or one hit: evidence, an explanation, and a suggested action. Rules are pure: no network, no model, no shared mutable state.
+
+The registry (rules/registry.py) builds each Finding from a hit, so rule ID, category, and severity are set in one place, including severity overrides. There is at most one finding per rule per tool, with up to 5 evidence items. Finding IDs have the form tool_index:rule_id and are scan-local. M3 should consider a cross-scan fingerprint (tool content hash plus rule ID) for change detection and false positive marks; it is not built yet. The rule set carries a version (RULESET_VERSION), bumped whenever a rule is added, removed, or changes what it reports. Rules can be disabled or given another severity through rules_disabled and rules_severity_overrides (section 3).
+
+Text scanned by the text rules (injection, hidden characters, exfiltration, cross-tool): the name, title, description, string annotations (such as annotations.title, which MCP uses as a display title), and every string value and property name in input_schema, including default, enum, const, examples, and title. Non-string values are skipped. Text is capped at 100,000 characters per tool so a huge schema cannot slow a scan; text past the cap is never scanned, and TG-SIZ-003 reports that.
+
+Matching views (added after the first held-out batch): text rules match against a folded copy of each field, never the raw text. Folding removes invisible and control characters, turns unusual spaces into plain spaces, maps a small built-in table of Cyrillic and Greek look-alike letters to Latin, and applies Unicode compatibility folding (NFKC) one character at a time, so fullwidth letters and ligatures match. Folding is for matching only and never used for hashing. An index map links every folded character to its original offset, so evidence offsets always point into the stored text and evidence still shows the original text with hidden characters named. Schema text (parameter names, required entries, and other schema strings) also gets a word-split view, where underscores and hyphens between letters or digits, dots between letters, and camelCase boundaries become spaces, so read_all_api_keys reads as read all api keys. Rules match both views and report each original span once. No new dependency is used. Tests check the index map (including zero-width characters removed before a match) and that ordinary Russian, Greek, Arabic, and Hebrew text does not match English rules.
 
 ### 6.2 Initial rule catalog
 
@@ -170,30 +180,56 @@ A rule has: an ID, a category, a default severity, a short description, and an e
 | TG-INJ-001 | injection | high | Directive text aimed at the model within a description |
 | TG-INJ-002 | injection | high | Phrasing that tries to override or disregard prior instructions |
 | TG-INJ-003 | injection | high | Instructions to hide actions or information from the user |
-| TG-HID-001 | hidden_characters | high | Zero-width or invisible characters in names or descriptions |
+| TG-INJ-004 | injection | medium | Text telling the model that its earlier guidance or restrictions no longer apply |
+| TG-HID-001 | hidden_characters | high | Zero-width or invisible characters in any scanned text |
 | TG-HID-002 | hidden_characters | high | Bidirectional control characters |
 | TG-HID-003 | hidden_characters | medium | Mixed-script or look-alike characters in tool names |
 | TG-EXF-001 | exfiltration | critical | Instruction to send data to an external address |
 | TG-EXF-002 | exfiltration | high | References to secrets, keys, credentials, or sensitive files in directives |
-| TG-EXF-003 | exfiltration | medium | Large encoded blobs in descriptions |
+| TG-EXF-003 | exfiltration | medium | Large encoded blobs in any scanned text |
 | TG-XTL-001 | cross_tool | medium | Description that directs how other tools must be used |
 | TG-XTL-002 | cross_tool | medium | Instruction to call another tool before or after this one |
-| TG-SCH-001 | excessive_permissions | medium | Unconstrained free-form parameters such as command, path, query, url, or code |
+| TG-SCH-001 | excessive_permissions | medium | Unconstrained execution-like parameters such as command, shell, script, code, or sql |
 | TG-SCH-002 | excessive_permissions | low | Missing type or description on parameters, or no input schema at all |
 | TG-SCH-003 | excessive_permissions | low | Schema accepts arbitrary additional properties |
-| TG-SCH-004 | excessive_permissions | medium | Destructive-sounding tool without a destructive or read-only hint |
+| TG-SCH-004 | excessive_permissions | low | Destructive-sounding tool without a destructive or read-only hint |
+| TG-SCH-005 | excessive_permissions | high | Hint that contradicts a destructive tool name |
+| TG-SCH-006 | excessive_permissions | low | Unconstrained locator parameters such as path, file, url, or host |
+| TG-SCH-007 | excessive_permissions | medium | Read-only hint on a tool whose name says it writes or changes data |
 | TG-NAM-001 | naming | medium | Duplicate or colliding tool names within a scan |
 | TG-NAM-002 | naming | medium | Names that closely imitate common tool names |
 | TG-SIZ-001 | structure | low | Description longer than the configured threshold |
 | TG-SIZ-002 | structure | info | Unusual schema depth or structure |
+| TG-SIZ-003 | structure | medium | Tool text exceeded the scan cap and part of it was not scanned |
 
 The catalog is an initial proposal. Thresholds and patterns are tuned against the fixture corpus. Each rule ships with at least one positive fixture and one negative fixture.
+
+Rule notes and recorded decisions:
+- TG-HID-001 covers format and control characters, Unicode tag characters (U+E0000 to U+E007F, used for ASCII smuggling), variation selectors, lone surrogates, and blank fillers. It does not report unusual spaces such as the no-break space, which still render as space (they are shown by name in evidence), or a zero width joiner or emoji variation selector directly after an emoji, which is normal emoji composition.
+- TG-HID-001 and TG-HID-002 do not report the plain direction marks U+200E, U+200F, and U+061C, because legitimate right-to-left text uses them. TG-HID-002 reports the embedding, override, and isolate controls (U+202A to U+202E, U+2066 to U+2069) used to reorder displayed text.
+- TG-HID-003 reports letters from more than one writing system in a tool name (Japanese kana and kanji count as one), and letters whose compatibility form differs, such as fullwidth or mathematical letters and ligatures.
+- TG-EXF-001 needs, in one sentence, a send verb, a kind of private data (conversation, messages, secrets, credentials, file contents, and similar), and an outside address. A documentation link or a tool that sends its own message to a webhook is not reported.
+- TG-EXF-002 reports sensitive file paths (such as ~/.ssh, .env, .aws/credentials) together with any directive verb, and secret nouns (API key, password, credentials) only together with taking verbs (read, extract, copy, send, and similar). Documentation such as "pass your API key in the Authorization header" is deliberately not an exfiltration finding.
+- TG-EXF-003 reports base64 runs of 120 or more characters and hex runs of 128 or more.
+- TG-XTL-001 and TG-XTL-002 fire only when the text targets a different tool: one named in the scan, or a name followed by tool, function, or command. "Call this before create_event" refers to the tool itself and is not reported. TG-XTL-001 also reports policy wording addressed to other tools as a group ("all mail tools must", "every other tool should") with a modal verb, without needing a when clause; plain mentions such as "works with all other tools" are not reported.
+- TG-SCH-001 (medium) reports parameters whose name contains an execution-like word (command, cmd, shell, script, code, eval, exec, expression, sql, function; function was added after calibration showed it only flags Playwright's browser_evaluate, which takes JavaScript). TG-SCH-006 (low) reports locator words (path, filepath, file, filename, dir, directory, folder, url, uri, endpoint, host). Both match plurals (paths, commands) and accept a string, an untyped value, or an array of strings, without an enum, const, or pattern on the value or its items. "query" is in neither set, because a free-text search query is normal. The split and the removal of "query" were checked on two independent calibration sources (the MCP reference servers, and the Playwright and GitHub servers, see tests/calibration/README.md): on both, unconstrained paths, file names, and search queries were the main source of noise, while execution-like parameters stay rare and worth a human look.
+- TG-INJ-004 (medium) needs, in one sentence, wording addressed to the model about its own earlier guidance (for example "you were previously instructed", "originally you did not", "your earlier rules") and wording that it no longer applies (now, no longer, lifted, removed, does not apply). It is narrow on purpose: product changelogs ("this version removes the old limit") and statements about the tool itself are not reported. The official MCP fetch server triggers it with its "originally you did not have internet access ... this tool now grants you internet access" wording. That is accepted as a reviewable finding: the intent is benign, but the wording overrides earlier guidance, and at medium it does not fail a scan at the default high threshold. The judge sees it for context (section 11.1).
+- TG-SCH-003 reports only an explicit additionalProperties of true or {}. Leaving it out is the JSON Schema default, and reporting that would add noise to almost every server.
+- TG-SCH-004 and TG-SCH-005 treat annotations as claims by the server, not facts. Per the MCP specification (2026-07-28), readOnlyHint defaults to false and destructiveHint to true, and clients should not rely on hints from untrusted servers. Because a missing hint is already treated as destructive, TG-SCH-004 is hygiene (low). Contradicting hints are judged by words in the tool name only, never by description verbs alone (calibration showed Playwright's browser_hide_highlight, whose description starts "Remove", removes a visual highlight, not data). TG-SCH-005 (high): a destructive name word (delete, remove, drop, destroy, purge, wipe, erase, truncate, overwrite, terminate, kill, reset, uninstall, revoke) with readOnlyHint true or destructiveHint false. TG-SCH-007 (medium): a modifying name word (write, create, update, insert, upload, send, post, put, move, rename, append, modify, edit, patch, save, set, publish, deploy) with readOnlyHint true; Playwright's browser_pdf_save is an example. destructiveHint false on a modifying tool is not a contradiction, because it means additive. TG-SCH-004 still uses the opening description as well as the name. Non-boolean hint values count as missing.
+- Wording categories widened after the first held-out batch, each checked against all three calibration sources with no new findings: hiding (no need to tell or bring up with the user, stealth adverbs such as quietly or discreetly before an action, without letting the user know); directives (decode or decrypt followed by follow, execute, or obey; notes or labels addressed to the assistant, such as "Note for the assistant:" or "LLM:", together with an action verb); secrets (credential and token file names such as token.json or credentials.yaml, token files under ~/.config, key file names written with separators, and "contents of" or "text of" as a request); exfiltration (third-person and replication verbs such as sends, mirrors, syncs, shares, and host names without a scheme with a common public suffix). Not added, because it could not be generalized without false positives: "add" as an action verb for TG-INJ-001, which would flag ordinary setup text such as "Before using this tool, add the repository to the allowed list".
+- TG-NAM-002 compares names against other tools in the scan and a short built-in list of common tool names. It reports only adjacent transpositions, single substitutions inside a word (not the first letter, so get_user and set_user are fine), and look-alike characters. Pairs that differ only by a plural s or a version or numeric suffix are never reported.
+- TG-SIZ-002 reports schemas nested more than 10 levels deep or with more than 100 parameters.
+- TG-SIZ-003 reports that text past the 100,000 character cap was not scanned, naming the field where scanning stopped and the offset. An instruction hidden after the cap is invisible to the other rules, but this finding (medium) means the scan is never silent about it: the verdict is at least review.
 
 ### 6.3 Evidence capture
 Rules must record exact positions and excerpts so reports can show the match. Invisible characters are recorded by code point name, not rendered raw.
 
+Format: start and end are character offsets in the stored, unmodified text of the field. The excerpt is limited to 200 characters, and context adds up to 40 characters on each side. In both, hidden and control characters are written as [U+XXXX NAME], for example [U+200B ZERO WIDTH SPACE], so evidence never contains them raw. The field is name, title, description, annotations/<key>, or a JSON Pointer style path into the schema such as input_schema/properties/city/description; a property name is marked with the suffix " (property name)". For structural schema findings with no matched text, the evidence text is the compact JSON of the sub-schema and the offsets cover that text.
+
 ### 6.4 Rule performance
 All rules together should process a typical manifest in well under a second. No rule may use unbounded backtracking patterns; pattern complexity is reviewed.
+
+Approach: patterns use literal words joined by bounded whitespace runs, and rules that need several words together search inside sentence-like windows of at most 400 characters, so matching stays linear in the text length. The real guard is a timing test that runs every rule on hostile inputs (long runs of repeated characters and near-matches, wide and deep schemas, very long names) with a budget of 1 second per rule and input. A static check of pattern text for nested unbounded quantifiers is only a heuristic. A separate test runs every rule on odd input (empty strings, lone surrogates, control characters, non-string values inside schemas) and requires that no rule raises.
 
 ## 7. Classifier Stage (removed from the MVP)
 
@@ -201,16 +237,22 @@ A prompt-injection classifier stage (Groq-hosted Llama Prompt Guard 2) was evalu
 
 ## 8. Triage Design (core.triage)
 
-Triage is a pure function with no model calls.
+Triage is a pure function with no model calls. The suspicion signals below are built in M5 together with triage, reusing the M2 rule text helpers (including the folded and word-split views); they are not part of M2 because nothing else uses them.
+
+Triage must not rely only on rule findings. The M2 held-out results showed that a tool which evades the rules (first batch: 0 of 9 fully detected before tuning; second batch: 2 of 11 on first run) would also evade a triage that only looks at rule findings, and would then never reach the AI judge. Suspicion signals are therefore deliberately broader and cheaper than rules: they may be noisy, because they only decide what the judge sees, never the verdict.
 
 Inputs: per-tool rule findings, the scan's fail_on threshold, and the suspicion signals below, all computed deterministically from the tool.
 Output: for each tool, skip or review, plus a suspicion order used when the per-scan cap applies.
 
 Suspicion signals (weak signals that do not create findings on their own):
-- Risky capability hints: parameters that look like free-form execution, file paths, URLs, queries, or code, and destructive-sounding tool names.
-- Markup-like text in the description: tags such as \<IMPORTANT\>, HTML comments, code fences, or unusual bracketed blocks.
-- Directive-like text in the description: imperative wording aimed at the model, such as always, never, must, before using, do not tell, below the thresholds the rules use.
-- Description length above description_length_threshold.
+- Hidden or folded-away characters: any character that folding removes or changes (invisible, control, look-alike, or compatibility characters), even below rule thresholds.
+- Markup-like text: tags such as \<IMPORTANT\>, HTML comments, code fences, fake headings such as "### SYSTEM", or unusual bracketed blocks.
+- Second-person and model-addressed wording: you, your, the assistant, the model, the AI, together with modal or imperative verbs, below the thresholds the rules use.
+- Encoded-looking strings: shorter base64 or hex runs than TG-EXF-003 reports, percent-escapes, digit-for-letter words (leetspeak), and words mentioning encodings (rot13, base64, decode).
+- Parameter names and enum or required values that read as sentences (several words after splitting separators).
+- Sensitive nouns anywhere (password, token, key, credential, conversation, history) and addresses or host names.
+- Risky capability hints: execution-like or locator parameters, and destructive or modifying tool names.
+- Long descriptions above description_length_threshold, and text split across fields (title and description read together).
 
 Interpretation principle: where the policy can be read two ways, the reading that sends more tools to review is used, since a missed risk costs more than an extra AI call. The per-scan cap still applies.
 
@@ -222,10 +264,22 @@ Decision policy (the first matching rule wins):
 
 Suspicion order: tools selected for review are sorted by highest rule finding severity, then the number of suspicion signals, then description length, all descending, with tool name as a stable tie-breaker. When the cap or the budget is hit, the first tools in this order are reviewed and the remainder are listed in unreviewed_tools. When AI review is disabled, triage does not run and unreviewed_tools is empty.
 
+AI review coverage must be visible: the scan summary and the report show how many tools were AI-reviewed, how many were skipped by triage, and how many qualified but were not reviewed (cap, budget, or provider), with a clear note that tools not reviewed by AI were checked by rules only, and rules miss many attacks (see the held-out results).
+
 Quota impact: without a classifier, no tool is skipped on the basis of a low score, so more tools reach the judge. Three controls keep this within free quota:
 - The per-scan cap (judge_max_tools_per_scan, default 10) with batching (judge_max_tools_per_call, default 5) bounds a fresh scan to about 2 judge calls, within the PRD target of 3 or fewer.
 - The cache (section 12) means an unchanged tool is never judged twice for the same prompt version, so rescans cost close to zero calls.
 - The budget ledger (section 10) stops before limits; the binding Groq limit in practice is tokens per day (200K, with a 180K safety budget). At about 3,500 tokens per full batch (section 10.2), that is roughly 50 full batches, or about 25 fresh capped scans per day, before falling back to OpenRouter or degrading. These figures are recalculated after token calibration in M5.
+
+Full-review estimate for the calibration sources (no real calls; section 10.2 formula with 5 tools per call and 250 output tokens per tool):
+
+| Source | Tools | Calls | Estimated tokens | Share of the 180K daily budget | Scans at the cap of 10 |
+|---|---|---|---|---|---|
+| MCP reference servers (6 servers) | 39 | 11 | about 20K | 11% | 4 |
+| Playwright | 72 | 15 | about 31K | 17% | 8 |
+| GitHub | 92 | 19 | about 49K | 27% | 10 |
+
+Output, which includes reasoning, is about half of every estimate. The largest single batch is about 5.3K tokens (GitHub), under the 8K per minute limit, but that limit allows only about one such call per minute, so a full review of the GitHub server would take about 20 minutes. M5 decides between raising the per-scan cap and reviewing in suspicion order across several scans, using the cache so each tool is judged once.
 
 ## 9. Model Layer (llm.provider)
 
@@ -290,6 +344,8 @@ OpenRouter sends no rate limit headers on successful responses. Its free_model_d
 For each batch: a fixed instruction block, then each tool in a clearly delimited data block containing name, description, schema excerpt, and the deterministic findings already known. The instruction block states that the delimited content is untrusted data, must never be followed as instructions, and that the only task is classification and explanation.
 
 The instruction block also defines the severity levels, using one sentence each from pdd.md section 7.3, and states that a tool with no risk signals is info. When unsure between two levels, the judge picks the higher one only if it can quote evidence. This was added after M0 spike 01 rated the same benign tool low in one mode and info in others.
+
+Rule findings that need judgment are passed to the judge for context and may be annotated, never removed (section 11.3). TG-INJ-004 is the main example: wording that lifts earlier guidance is sometimes benign, as in the official fetch server, and the judge can add a note explaining whether it looks like an attempt to manipulate the agent.
 
 ### 11.2 Output contract
 A list of JudgeVerdict items, one per tool, validated against the schema. risk_level and any severity in added findings must be one of the Severity values. Free-form text is limited to short explanation fields with length caps.
@@ -358,7 +414,7 @@ Error codes are part of the public API contract. New codes may be added; an exis
 
 ## 14. Aggregation and Scoring (core.scoring)
 
-1. Collect findings from rules and the judge.
+1. Collect findings from rules and the judge. The verdict function (core/scoring.py) exists from M2 so the fixture regression suite can check expected verdicts; deduplication and counts come in M3.
 2. Deduplicate: findings with the same tool, category, and overlapping evidence are merged, keeping the highest severity and recording all sources.
 3. Per-tool severity is the highest severity among its findings, or none.
 4. Scan verdict uses the fail threshold fail_on, taken from the request or from default_fail_on, which is high:
@@ -414,6 +470,7 @@ Submitting the same manifest again creates a new scan record, but cache hits mak
 ## 17. Reporting Design (reporting)
 
 - Input: ScanReport.
+- Grouping (requirement for M3): when the same rule fires on many tools of one scan, summaries and the Markdown report group those findings under one entry with a count and the list of tools, so twelve identical schema findings do not bury the important ones. Individual findings stay available in full (JSON report and the findings API).
 - Output: JSON conforming to a versioned schema, and Markdown following the structure in pdd.md section 7. Both are served through the report endpoint (section 18).
 - Safe presentation: evidence blocks are escaped, control and invisible characters shown by name, markup neutralized, and excerpts length-limited.
 - Determinism: same input produces identical output apart from timestamps, which helps testing and diffing.
@@ -512,7 +569,13 @@ CI is served by the API, not by a separate tool. A pipeline submits a scan with 
 
 Coverage targets: every rule and every authority rule must have tests. Fixture corpus metrics (detection and false positive rates) are reported by the pytest fixture regression suite.
 
-Fixture format and metric definitions: tests/fixtures/README.md.
+Fixture format and metric definitions: tests/fixtures/README.md. The regression suite runs from M2 on rule output and prints, after every pytest run, the detection rate, the false positive rate, and for information the number of benign fixtures with any finding. From M3 it runs the full pipeline.
+
+Held-out hostile set: tests/fixtures/heldout/ holds fixtures written after the rules, from publicly documented MCP attack patterns, to measure overfitting. Its results are printed after every pytest run, separately from the main detection rate, and are not asserted. A batch that has been used for tuning moves into malicious/ as regression tests and is replaced by a fresh batch, whose first run is the honest held-out number. The same author writes the rules and the fixtures, so held-out results are an estimate, not a guarantee.
+
+Calibration: tests/calibration/ holds tool lists of real servers from two independent sources. A script (not part of the pass or fail checks) prints every finding so false positives can be judged by eye before any rule is tuned.
+
+Rule safety tests (section 6.4): timing on hostile input, a nested-quantifier heuristic, and no exceptions on odd input. A test also keeps all .py and .json files ASCII-only, so hidden and look-alike characters in fixtures and tests are always written as escapes and visible in review.
 
 ## 23. Deployment Design
 
@@ -532,7 +595,7 @@ This order matches the milestones in instruction.md section 8 and prd.md section
 4. M3: Storage, scan pipeline without AI, and JSON and Markdown reports.
 5. M4: Model layer, budget ledger, cache, and fake-model tests.
 6. M5: Triage, judge, and authority rules, with degraded handling.
-7. M6: HTTP API and the pytest fixture regression harness.
+7. M6: HTTP API. The fixture regression suite exists from M2.
 8. M7: Remote ingestion over HTTP, hardening, documentation, and deployment.
 
 ## 25. Open Technical Questions

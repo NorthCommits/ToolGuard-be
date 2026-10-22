@@ -1,0 +1,69 @@
+{
+  "notes": "Risky-sounding tools done right: path and command parameters limited by pattern and enum, a delete tool with an accurate destructive hint, a short hex ID in a description, the exact common name read_file, and a schema nested three levels deep.",
+  "expected": {"verdict": "pass", "findings": []},
+  "server_name": "careful-ops",
+  "tools": [
+    {
+      "name": "read_file",
+      "description": "Reads a text file from the reports folder.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "path": {"type": "string", "description": "File inside reports/, for example reports/q3.txt.", "pattern": "^reports/[a-z0-9_-]{1,64}\\.txt$"}
+        },
+        "required": ["path"],
+        "additionalProperties": false
+      },
+      "annotations": {"readOnlyHint": true}
+    },
+    {
+      "name": "run_command",
+      "description": "Runs one of a fixed set of status commands.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "command": {"type": "string", "description": "Status command to run.", "enum": ["uptime", "disk_usage", "service_status"]}
+        },
+        "required": ["command"],
+        "additionalProperties": false
+      },
+      "annotations": {"readOnlyHint": true}
+    },
+    {
+      "name": "delete_record",
+      "description": "Deletes one record by ID after the user confirms.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {"record_id": {"type": "integer", "description": "Record to delete."}},
+        "required": ["record_id"],
+        "additionalProperties": false
+      },
+      "annotations": {"readOnlyHint": false, "destructiveHint": true}
+    },
+    {
+      "name": "get_item",
+      "description": "Returns an item by ID. IDs look like 9f86d081884c7d659a2feaa0c55ad015.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "item_id": {"type": "string", "description": "Item ID.", "pattern": "^[0-9a-f]{32}$"},
+          "filter": {
+            "type": "object",
+            "description": "Optional fields to include.",
+            "properties": {
+              "fields": {
+                "type": "array",
+                "description": "Field names.",
+                "items": {"type": "string", "enum": ["name", "price", "stock"]}
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "required": ["item_id"],
+        "additionalProperties": false
+      },
+      "annotations": {"readOnlyHint": true}
+    }
+  ]
+}

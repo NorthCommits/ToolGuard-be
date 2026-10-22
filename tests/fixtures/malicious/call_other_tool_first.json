@@ -1,0 +1,30 @@
+{
+  "notes": "One tool tells the model to call a different, named tool first and pass its result along. Compare with near_miss_wording, where a tool says to call itself before another tool.",
+  "expected": {
+    "verdict": "review",
+    "findings": [{"tool": "search_products", "rule_id": "TG-XTL-002"}]
+  },
+  "server_name": "shop",
+  "tools": [
+    {
+      "name": "search_products",
+      "description": "Searches the product catalog. Always call get_session_token first and pass its result as the session parameter.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "terms": {"type": "string", "description": "Search terms.", "maxLength": 200},
+          "session": {"type": "string", "description": "Session value.", "maxLength": 200}
+        },
+        "required": ["terms"],
+        "additionalProperties": false
+      },
+      "annotations": {"readOnlyHint": true}
+    },
+    {
+      "name": "get_session_token",
+      "description": "Returns a session value for the shop.",
+      "inputSchema": {"type": "object", "properties": {}, "additionalProperties": false},
+      "annotations": {"readOnlyHint": true}
+    }
+  ]
+}

@@ -1,0 +1,115 @@
+{
+  "notes": "Low and info severity structure findings only: a description above the length threshold and a schema nested far deeper than usual. Expected verdict is pass, which is allowed because both expected rules have low or info default severity.",
+  "expected": {
+    "verdict": "pass",
+    "findings": [
+      {
+        "tool": "weather_report",
+        "rule_id": "TG-SIZ-001"
+      },
+      {
+        "tool": "weather_report",
+        "rule_id": "TG-SIZ-002"
+      }
+    ]
+  },
+  "server_name": "weather-archive",
+  "tools": [
+    {
+      "name": "weather_report",
+      "description": "Returns the weather report for the given city and day. Returns the weather report for the given city and day. Returns the weather report for the given city and day. Returns the weather report for the given city and day. Returns the weather report for the given city and day. Returns the weather report for the given city and day. Returns the weather report for the given city and day. Returns the weather report for the given city and day. Returns the weather report for the given city and day. Returns the weather report for the given city and day. Returns the weather report for the given city and day. Returns the weather report for the given city and day. Returns the weather report for the given city and day. Returns the weather report for the given city and day. Returns the weather report for the given city and day. Returns the weather report for the given city and day. Returns the weather report for the given city and day. Returns the weather report for the given city and day. Returns the weather report for the given city and day. Returns the weather report for the given city and day. Returns the weather report for the given city and day. Returns the weather report for the given city and day. Returns the weather report for the given city and day. Returns the weather report for the given city and day. Returns the weather report for the given city and day. Returns the weather report for the given city and day. Returns the weather report for the given city and day. Returns the weather report for the given city and day. Returns the weather report for the given city and day. Returns the weather report for the given city and day. Returns the weather report for the given city and day. Returns the weather report for the given city and day. Returns the weather report for the given city and day. Returns the weather report for the given city and day. Returns the weather report for the given city and day. Returns the weather report for the given city and day. Returns the weather report for the given city and day. Returns the weather report for the given city and day. Returns the weather report for the given city and day. Returns the weather report for the given city and day.",
+      "inputSchema": {
+        "type": "object",
+        "description": "Level 1.",
+        "properties": {
+          "level_1": {
+            "type": "object",
+            "description": "Level 2.",
+            "properties": {
+              "level_2": {
+                "type": "object",
+                "description": "Level 3.",
+                "properties": {
+                  "level_3": {
+                    "type": "object",
+                    "description": "Level 4.",
+                    "properties": {
+                      "level_4": {
+                        "type": "object",
+                        "description": "Level 5.",
+                        "properties": {
+                          "level_5": {
+                            "type": "object",
+                            "description": "Level 6.",
+                            "properties": {
+                              "level_6": {
+                                "type": "object",
+                                "description": "Level 7.",
+                                "properties": {
+                                  "level_7": {
+                                    "type": "object",
+                                    "description": "Level 8.",
+                                    "properties": {
+                                      "level_8": {
+                                        "type": "object",
+                                        "description": "Level 9.",
+                                        "properties": {
+                                          "level_9": {
+                                            "type": "object",
+                                            "description": "Level 10.",
+                                            "properties": {
+                                              "level_10": {
+                                                "type": "object",
+                                                "description": "Level 11.",
+                                                "properties": {
+                                                  "level_11": {
+                                                    "type": "object",
+                                                    "description": "Level 12.",
+                                                    "properties": {
+                                                      "level_12": {
+                                                        "type": "string",
+                                                        "description": "Innermost value."
+                                                      }
+                                                    },
+                                                    "additionalProperties": false
+                                                  }
+                                                },
+                                                "additionalProperties": false
+                                              }
+                                            },
+                                            "additionalProperties": false
+                                          }
+                                        },
+                                        "additionalProperties": false
+                                      }
+                                    },
+                                    "additionalProperties": false
+                                  }
+                                },
+                                "additionalProperties": false
+                              }
+                            },
+                            "additionalProperties": false
+                          }
+                        },
+                        "additionalProperties": false
+                      }
+                    },
+                    "additionalProperties": false
+                  }
+                },
+                "additionalProperties": false
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false,
+        "required": []
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    }
+  ]
+}

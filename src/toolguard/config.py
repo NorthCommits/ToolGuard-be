@@ -45,6 +45,10 @@ class Settings(BaseSettings):
     ingest_max_redirects: int = 3
     ingest_max_tools: int = 500
     description_length_threshold: int = 2_000
+    # Read from the environment only, never from API requests. IDs are checked by
+    # toolguard.rules.registry.active_rules at startup.
+    rules_disabled: list[str] = []
+    rules_severity_overrides: dict[str, SeverityName] = {}
 
     database_path: Path = Path("toolguard.db")
     service_access_token: SecretStr | None = None

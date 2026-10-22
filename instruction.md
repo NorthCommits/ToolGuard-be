@@ -154,7 +154,7 @@ Done when: project runs, tests pass (even if trivial), spike findings are report
 
 Done when: ingestion tests pass for valid and invalid manifests.
 
-### M2: Deterministic rule engine
+### M2: Deterministic rule engine (done)
 - Rule registry and the initial rule catalog from sdd.md section 6, starting with the highest-value rules (injection, hidden characters, exfiltration, schema weakness) and adding the rest.
 - Evidence capture with exact positions.
 
@@ -179,21 +179,24 @@ Done when: all model layer and ledger behavior is covered by offline tests and n
 
 ### M5: Triage and judge
 - Deterministic triage from sdd.md section 8: decision policy, suspicion signals, and suspicion order under the per-scan cap. No classifier.
+- Triage must not rely only on rule findings: the M2 held-out results showed that tools which evade the rules would also evade a rules-only triage. Build the broader, cheap suspicion signals listed in sdd.md section 8 (hidden or folded-away characters, markup-like text, second-person and model-addressed wording, encoded-looking strings, parameter names and values that read as sentences, sensitive nouns and addresses, risky capability hints, long or split text).
+- The report and scan summary show AI review coverage: how many tools were AI-reviewed, skipped by triage, or qualified but not reviewed, with a clear note that tools not reviewed by AI were checked by rules only.
+- Start the M5 plan with the full-review token estimate from sdd.md section 8 (for example about 49K tokens and 19 calls for the 92-tool GitHub server), refreshed with calibrated token figures, and propose whether to raise the per-scan cap or review in suspicion order across several scans.
 - Judge agent with batching, tool output mode, risk_level restricted to the severity values, severity definitions in the prompt, one validation retry, and the authority rules enforced in code.
 - The judge's model loop from sdd.md section 11.7: consult the ledger before each attempt, record after each attempt, move to the next model on provider errors and on invalid output.
 - Degraded scan handling and the unreviewed tools list.
 - Calibrate the token estimates and judge_output_tokens_per_tool on the fixture corpus.
 
-Done when: pipeline tests cover normal, cached, degraded, provider-error, and invalid-output paths with fake models, including falling through to the next model.
+Done when: pipeline tests cover normal, cached, degraded, provider-error, and invalid-output paths with fake models, including falling through to the next model, and the held-out fixtures have been run through the judge once, manually, with a counted number of real calls that the owner approved beforehand.
 
 ### M6: Frontend-ready HTTP API
 - FastAPI endpoints from sdd.md section 18 under /v1: scan submission, scan history, scan detail with progress (status plus current stage), findings and per-tool lists with pagination, filtering by severity and category, and sorting, report in JSON and Markdown, rules, budget, and health.
 - One error shape with the stable error codes from sdd.md section 13.
 - CORS through a setting, off by default, and the optional service access token.
 - A committed OpenAPI schema snapshot and a test that fails when the schema changes unintentionally.
-- The fixture regression harness as a pytest suite that reports detection and false positive rates.
+- The fixture regression suite already exists (from M2) and must keep passing.
 
-Done when: API contract tests (including the OpenAPI snapshot, error shapes, pagination, filters, CORS, and the access token) and the fixture regression suite pass.
+Done when: API contract tests (including the OpenAPI snapshot, error shapes, pagination, filters, CORS, and the access token) pass, and the fixture regression suite still passes.
 
 ### M7: Remote ingestion, hardening, README
 - Remote MCP ingestion over HTTP with address safety and limits.
