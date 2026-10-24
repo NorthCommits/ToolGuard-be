@@ -1,9 +1,23 @@
 """Shared fixtures, and the fixture corpus metrics printed at the end of every pytest run."""
 
+import socket
+
 import pytest
 from fixture_corpus import heldout_outcomes, metrics
 
 from toolguard.config import Settings
+
+
+@pytest.fixture(autouse=True)
+def no_network(monkeypatch: pytest.MonkeyPatch) -> None:
+    """No test may reach a real host: name lookups and connections fail."""
+
+    def blocked(*args, **kwargs):
+        raise RuntimeError("tests must not open network connections")
+
+    monkeypatch.setattr(socket, "getaddrinfo", blocked)
+    monkeypatch.setattr(socket.socket, "connect", blocked)
+    monkeypatch.setattr(socket.socket, "connect_ex", blocked)
 
 
 @pytest.fixture
