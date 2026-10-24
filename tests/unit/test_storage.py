@@ -50,17 +50,28 @@ def test_migrating_twice_is_harmless(settings) -> None:
 @pytest.mark.parametrize("existing", [False, True])
 def test_failing_migration_rolls_back_completely(settings, monkeypatch, existing) -> None:
     path = settings.database_path
+    current = len(db.MIGRATIONS)
     if existing:
-        version(path)  # at version 1
+        version(path)  # fully migrated
     broken = (("CREATE TABLE extra (a)", "INSERT INTO extra VALUES (1)", "NOT VALID SQL"),)
     monkeypatch.setattr(db, "MIGRATIONS", db.MIGRATIONS + broken)
     with pytest.raises(sqlite3.OperationalError), db.connect(path):
         pass
     monkeypatch.undo()
     with sqlite3.connect(path) as conn:
-        assert conn.execute("PRAGMA user_version").fetchone()[0] == (1 if existing else 0)
+        assert conn.execute("PRAGMA user_version").fetchone()[0] == (current if existing else 0)
     assert "extra" not in tables(path)
     assert ("scans" in tables(path)) is existing
+
+
+def test_m3_database_is_upgraded_in_place(settings, monkeypatch) -> None:
+    monkeypatch.setattr(db, "MIGRATIONS", db.MIGRATIONS[:1])
+    scan_id = create_scan(settings)
+    assert "ai_calls" not in tables(settings.database_path)
+    monkeypatch.undo()
+    assert version(settings.database_path) == len(db.MIGRATIONS)
+    assert {"ai_calls", "provider_quota", "judge_cache"} <= tables(settings.database_path)
+    assert db.get_scan(settings.database_path, scan_id)["id"] == scan_id
 
 
 def test_newer_schema_is_refused(settings) -> None:

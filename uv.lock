@@ -1172,6 +1172,8 @@ version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "fastapi" },
+    { name = "httpx" },
+    { name = "httpx2" },
     { name = "mcp" },
     { name = "pydantic-ai-slim", extra = ["groq", "openrouter"] },
     { name = "pydantic-settings" },
@@ -1188,6 +1190,8 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "fastapi", specifier = ">=0.156.4" },
+    { name = "httpx", specifier = ">=0.28.1" },
+    { name = "httpx2", specifier = ">=2.15.1" },
     { name = "mcp", specifier = ">=2.3.0" },
     { name = "pydantic-ai-slim", extras = ["groq", "openrouter"], specifier = ">=2.59.0" },
     { name = "pydantic-settings", specifier = ">=2.16.1" },
