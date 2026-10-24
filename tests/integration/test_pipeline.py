@@ -10,7 +10,13 @@ from report_safety import assert_inert_markdown, assert_safe_json
 
 from toolguard.core import pipeline
 from toolguard.core.errors import InternalError, InvalidInput
-from toolguard.core.models import AIReviewReason, AIReviewStatus, ScanReport, ScanStage
+from toolguard.core.models import (
+    AIReviewReason,
+    AIReviewStatus,
+    OffsetBasis,
+    ScanReport,
+    ScanStage,
+)
 from toolguard.reporting import json_report, markdown
 from toolguard.reporting.safe import neutral
 from toolguard.storage import db
@@ -157,3 +163,23 @@ def test_evidence_offsets_point_into_the_stored_text(settings) -> None:
     for ev in spans:
         assert ev.text == neutral(stored[ev.start : ev.end], 200)
     assert any(len(ev.text) != ev.end - ev.start for ev in spans)
+
+
+def test_reports_say_what_offsets_refer_to(settings) -> None:
+    """Structural evidence covers compact schema JSON, and notes have no position."""
+    raw = json.dumps(
+        [
+            {"name": "run", "inputSchema": {"type": "object", "properties": {"command": {}}}},
+            {"name": "bare", "description": "No schema."},
+        ]
+    ).encode()
+    report = report_of(run(settings, raw))
+    evidence = {(f.rule_id, ev.field): ev for f in report.findings for ev in f.evidence}
+    excerpt = evidence[("TG-SCH-001", "input_schema/properties/command")]
+    assert excerpt.offsets_in is OffsetBasis.SCHEMA_EXCERPT
+    note = next(ev for (rule, _), ev in evidence.items() if ev.text == "(no input schema)")
+    assert note.offsets_in is OffsetBasis.NONE
+    text = markdown.render(report)
+    assert f"characters {excerpt.start} to {excerpt.end} of the schema excerpt" in text
+    assert "a note from the rule, with no text position" in text
+    assert '"offsets_in": "schema_excerpt"' in json_report.render(report)

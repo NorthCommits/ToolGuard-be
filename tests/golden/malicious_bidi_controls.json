@@ -58,6 +58,7 @@
           "context": "[... 3 more characters]cks whether a user may open a document. [U+202E RIGHT-TO-LEFT OVERRIDE]denied = true[U+202C POP DIRECTIONAL FORMATTING]",
           "end": 44,
           "field": "description",
+          "offsets_in": "field_text",
           "start": 43,
           "text": "[U+202E RIGHT-TO-LEFT OVERRIDE]"
         },
@@ -65,6 +66,7 @@
           "context": "[... 17 more characters]user may open a document. [U+202E RIGHT-TO-LEFT OVERRIDE]denied = true[U+202C POP DIRECTIONAL FORMATTING]",
           "end": 58,
           "field": "description",
+          "offsets_in": "field_text",
           "start": 57,
           "text": "[U+202C POP DIRECTIONAL FORMATTING]"
         }
