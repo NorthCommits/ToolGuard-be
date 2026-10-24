@@ -1,0 +1,108 @@
+{
+  "ai_review_coverage": {
+    "note": "Tools not reviewed by AI were checked by rules only.",
+    "tools_ai_reviewed": 0,
+    "tools_qualified_not_reviewed": 0,
+    "tools_rules_only": 1,
+    "tools_skipped_by_triage": 0
+  },
+  "ai_review_message": "AI review was not used for this scan (turned off for this scan). Findings come from deterministic rules only.",
+  "ai_review_reason": "disabled_by_request",
+  "ai_review_status": "disabled",
+  "ai_usage": {
+    "cache_hits": 0,
+    "providers": []
+  },
+  "counts": {
+    "by_category": {
+      "cross_tool": 0,
+      "excessive_permissions": 0,
+      "exfiltration": 0,
+      "hidden_characters": 1,
+      "injection": 0,
+      "naming": 0,
+      "structure": 0
+    },
+    "by_severity": {
+      "critical": 0,
+      "high": 1,
+      "info": 0,
+      "low": 0,
+      "medium": 0
+    }
+  },
+  "degraded": false,
+  "degraded_reason": null,
+  "disclaimer": "A result without findings is not a guarantee of safety: ToolGuard only detects the patterns its checks cover.",
+  "fail_on": "high",
+  "finding_groups": [
+    {
+      "category": "hidden_characters",
+      "finding_ids": [
+        "0:TG-HID-002"
+      ],
+      "rule_id": "TG-HID-002",
+      "severity": "high",
+      "tool_count": 1,
+      "tool_names": [
+        "check_access"
+      ]
+    }
+  ],
+  "findings": [
+    {
+      "category": "hidden_characters",
+      "confidence": null,
+      "evidence": [
+        {
+          "context": "[... 3 more characters]cks whether a user may open a document. [U+202E RIGHT-TO-LEFT OVERRIDE]denied = true[U+202C POP DIRECTIONAL FORMATTING]",
+          "end": 44,
+          "field": "description",
+          "start": 43,
+          "text": "[U+202E RIGHT-TO-LEFT OVERRIDE]"
+        },
+        {
+          "context": "[... 17 more characters]user may open a document. [U+202E RIGHT-TO-LEFT OVERRIDE]denied = true[U+202C POP DIRECTIONAL FORMATTING]",
+          "end": 58,
+          "field": "description",
+          "start": 57,
+          "text": "[U+202C POP DIRECTIONAL FORMATTING]"
+        }
+      ],
+      "explanation": "The tool description contains 2 text direction controls, such as [U+202E RIGHT-TO-LEFT OVERRIDE], [U+202C POP DIRECTIONAL FORMATTING]. These characters change the order in which text is displayed, so what a person reads can differ from what the AI model reads.",
+      "fingerprint": "f891008c54d1a3d1117d517f40d829753b30df30985f3beb6bc311b21c67c1dd:TG-HID-002",
+      "id": "0:TG-HID-002",
+      "review_note": null,
+      "rule_id": "TG-HID-002",
+      "severity": "high",
+      "source": "rule",
+      "suggested_action": "Remove the direction control characters and review the text as the model sees it.",
+      "tool_name": "check_access"
+    }
+  ],
+  "finished_at": "2026-01-01T00:00:00Z",
+  "scan_id": "00000000000000000000000000000000",
+  "started_at": "2026-01-01T00:00:00Z",
+  "status": "completed",
+  "target": "manifest",
+  "tool_count": 1,
+  "tool_results": [
+    {
+      "ai_reviewed": false,
+      "content_hash": "f891008c54d1a3d1117d517f40d829753b30df30985f3beb6bc311b21c67c1dd",
+      "finding_count": 1,
+      "highest_severity": "high",
+      "tool_name": "check_access"
+    }
+  ],
+  "unreviewed_tools": [],
+  "verdict": "fail",
+  "verdict_basis": "fail: at least one finding is at or above the fail_on threshold (high).",
+  "verdict_message": "Findings at or above the chosen threshold were detected.",
+  "versions": {
+    "prompt": null,
+    "report_schema": "1",
+    "rule_set": "1",
+    "toolguard": "pinned"
+  }
+}

@@ -26,6 +26,8 @@ testpaths = ["tests"]
 
 [dependency-groups]
 dev = [
+    "linkify-it-py>=2.2.0",
+    "markdown-it-py>=4.2.0",
     "pytest>=9.1.1",
     "ruff>=0.17.1",
 ]

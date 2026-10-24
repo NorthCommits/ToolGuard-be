@@ -1,0 +1,282 @@
+{
+  "ai_review_coverage": {
+    "note": "Tools not reviewed by AI were checked by rules only.",
+    "tools_ai_reviewed": 0,
+    "tools_qualified_not_reviewed": 0,
+    "tools_rules_only": 4,
+    "tools_skipped_by_triage": 0
+  },
+  "ai_review_message": "AI review was not used for this scan (turned off for this scan). Findings come from deterministic rules only.",
+  "ai_review_reason": "disabled_by_request",
+  "ai_review_status": "disabled",
+  "ai_usage": {
+    "cache_hits": 0,
+    "providers": []
+  },
+  "counts": {
+    "by_category": {
+      "cross_tool": 0,
+      "excessive_permissions": 6,
+      "exfiltration": 0,
+      "hidden_characters": 0,
+      "injection": 0,
+      "naming": 0,
+      "structure": 0
+    },
+    "by_severity": {
+      "critical": 0,
+      "high": 0,
+      "info": 0,
+      "low": 5,
+      "medium": 1
+    }
+  },
+  "degraded": false,
+  "degraded_reason": null,
+  "disclaimer": "A result without findings is not a guarantee of safety: ToolGuard only detects the patterns its checks cover.",
+  "fail_on": "high",
+  "finding_groups": [
+    {
+      "category": "excessive_permissions",
+      "finding_ids": [
+        "0:TG-SCH-001"
+      ],
+      "rule_id": "TG-SCH-001",
+      "severity": "medium",
+      "tool_count": 1,
+      "tool_names": [
+        "run_command"
+      ]
+    },
+    {
+      "category": "excessive_permissions",
+      "finding_ids": [
+        "1:TG-SCH-002",
+        "3:TG-SCH-002"
+      ],
+      "rule_id": "TG-SCH-002",
+      "severity": "low",
+      "tool_count": 2,
+      "tool_names": [
+        "write_file",
+        "get_status"
+      ]
+    },
+    {
+      "category": "excessive_permissions",
+      "finding_ids": [
+        "1:TG-SCH-003"
+      ],
+      "rule_id": "TG-SCH-003",
+      "severity": "low",
+      "tool_count": 1,
+      "tool_names": [
+        "write_file"
+      ]
+    },
+    {
+      "category": "excessive_permissions",
+      "finding_ids": [
+        "2:TG-SCH-004"
+      ],
+      "rule_id": "TG-SCH-004",
+      "severity": "low",
+      "tool_count": 1,
+      "tool_names": [
+        "delete_records"
+      ]
+    },
+    {
+      "category": "excessive_permissions",
+      "finding_ids": [
+        "1:TG-SCH-006"
+      ],
+      "rule_id": "TG-SCH-006",
+      "severity": "low",
+      "tool_count": 1,
+      "tool_names": [
+        "write_file"
+      ]
+    }
+  ],
+  "findings": [
+    {
+      "category": "excessive_permissions",
+      "confidence": null,
+      "evidence": [
+        {
+          "context": "{\"description\":\"Command to run.\",\"type\":\"string\"}",
+          "end": 49,
+          "field": "input_schema/properties/command",
+          "start": 0,
+          "text": "{\"description\":\"Command to run.\",\"type\":\"string\"}"
+        }
+      ],
+      "explanation": "The parameter named command accepts any text that looks like it will be run or evaluated, such as a command, code, or SQL.",
+      "fingerprint": "aeeb74c66c462a17743c670afac8fb755f2ab4d936ac1fc1d0af649cf12bd208:TG-SCH-001",
+      "id": "0:TG-SCH-001",
+      "review_note": null,
+      "rule_id": "TG-SCH-001",
+      "severity": "medium",
+      "source": "rule",
+      "suggested_action": "Restrict the parameter with an enum or a pattern, and validate it on the server.",
+      "tool_name": "run_command"
+    },
+    {
+      "category": "excessive_permissions",
+      "confidence": null,
+      "evidence": [
+        {
+          "context": "{}",
+          "end": 2,
+          "field": "input_schema/properties/content",
+          "start": 0,
+          "text": "{}"
+        }
+      ],
+      "explanation": "The parameter named content has no type or no description, so the AI model has to guess what to send.",
+      "fingerprint": "af6e60c1d3a1c0d3d2c006ab244c6f4e049feeea6c27fb2152222cfed5251f5a:TG-SCH-002",
+      "id": "1:TG-SCH-002",
+      "review_note": null,
+      "rule_id": "TG-SCH-002",
+      "severity": "low",
+      "source": "rule",
+      "suggested_action": "Give every parameter a type and a short description.",
+      "tool_name": "write_file"
+    },
+    {
+      "category": "excessive_permissions",
+      "confidence": null,
+      "evidence": [
+        {
+          "context": "true",
+          "end": 4,
+          "field": "input_schema/additionalProperties",
+          "start": 0,
+          "text": "true"
+        }
+      ],
+      "explanation": "The schema explicitly accepts parameters it does not define, so callers can pass anything alongside the documented inputs.",
+      "fingerprint": "af6e60c1d3a1c0d3d2c006ab244c6f4e049feeea6c27fb2152222cfed5251f5a:TG-SCH-003",
+      "id": "1:TG-SCH-003",
+      "review_note": null,
+      "rule_id": "TG-SCH-003",
+      "severity": "low",
+      "source": "rule",
+      "suggested_action": "Set additionalProperties to false unless extra fields are required.",
+      "tool_name": "write_file"
+    },
+    {
+      "category": "excessive_permissions",
+      "confidence": null,
+      "evidence": [
+        {
+          "context": "{\"description\":\"File path.\",\"type\":\"string\"}",
+          "end": 44,
+          "field": "input_schema/properties/path",
+          "start": 0,
+          "text": "{\"description\":\"File path.\",\"type\":\"string\"}"
+        }
+      ],
+      "explanation": "The parameter named path accepts any path, file name, or address, so the tool can be pointed at anything the server can reach.",
+      "fingerprint": "af6e60c1d3a1c0d3d2c006ab244c6f4e049feeea6c27fb2152222cfed5251f5a:TG-SCH-006",
+      "id": "1:TG-SCH-006",
+      "review_note": null,
+      "rule_id": "TG-SCH-006",
+      "severity": "low",
+      "source": "rule",
+      "suggested_action": "Check that the server confines the value, for example to allowed folders or hosts, and describe the limit in the schema with a pattern or enum where possible.",
+      "tool_name": "write_file"
+    },
+    {
+      "category": "excessive_permissions",
+      "confidence": null,
+      "evidence": [
+        {
+          "context": "delete_records",
+          "end": 6,
+          "field": "name",
+          "start": 0,
+          "text": "delete"
+        }
+      ],
+      "explanation": "The tool delete_records sounds destructive but declares no readOnlyHint or destructiveHint, so clients cannot tell from its metadata whether it changes data.",
+      "fingerprint": "9b64ce92625e824ab901a205a4cfa4d135283f2bf5f4c260e1f94db66767c49b:TG-SCH-004",
+      "id": "2:TG-SCH-004",
+      "review_note": null,
+      "rule_id": "TG-SCH-004",
+      "severity": "low",
+      "source": "rule",
+      "suggested_action": "Set destructiveHint to true so clients can ask for confirmation.",
+      "tool_name": "delete_records"
+    },
+    {
+      "category": "excessive_permissions",
+      "confidence": null,
+      "evidence": [
+        {
+          "context": "",
+          "end": 0,
+          "field": "input_schema",
+          "start": 0,
+          "text": "(no input schema)"
+        }
+      ],
+      "explanation": "The tool has no input schema, so nothing describes or limits what it accepts.",
+      "fingerprint": "dd51414ab743b07e54c1819808adb9dba4fcd48a3baff66e05a079f532766e5a:TG-SCH-002",
+      "id": "3:TG-SCH-002",
+      "review_note": null,
+      "rule_id": "TG-SCH-002",
+      "severity": "low",
+      "source": "rule",
+      "suggested_action": "Add an input schema with a type and description for each parameter.",
+      "tool_name": "get_status"
+    }
+  ],
+  "finished_at": "2026-01-01T00:00:00Z",
+  "scan_id": "00000000000000000000000000000000",
+  "started_at": "2026-01-01T00:00:00Z",
+  "status": "completed",
+  "target": "manifest",
+  "tool_count": 4,
+  "tool_results": [
+    {
+      "ai_reviewed": false,
+      "content_hash": "aeeb74c66c462a17743c670afac8fb755f2ab4d936ac1fc1d0af649cf12bd208",
+      "finding_count": 1,
+      "highest_severity": "medium",
+      "tool_name": "run_command"
+    },
+    {
+      "ai_reviewed": false,
+      "content_hash": "af6e60c1d3a1c0d3d2c006ab244c6f4e049feeea6c27fb2152222cfed5251f5a",
+      "finding_count": 3,
+      "highest_severity": "low",
+      "tool_name": "write_file"
+    },
+    {
+      "ai_reviewed": false,
+      "content_hash": "9b64ce92625e824ab901a205a4cfa4d135283f2bf5f4c260e1f94db66767c49b",
+      "finding_count": 1,
+      "highest_severity": "low",
+      "tool_name": "delete_records"
+    },
+    {
+      "ai_reviewed": false,
+      "content_hash": "dd51414ab743b07e54c1819808adb9dba4fcd48a3baff66e05a079f532766e5a",
+      "finding_count": 1,
+      "highest_severity": "low",
+      "tool_name": "get_status"
+    }
+  ],
+  "unreviewed_tools": [],
+  "verdict": "review",
+  "verdict_basis": "review: no finding reaches the fail_on threshold (high), and the highest severity (medium) is medium or above.",
+  "verdict_message": "Some findings need human review before this server is trusted.",
+  "versions": {
+    "prompt": null,
+    "report_schema": "1",
+    "rule_set": "1",
+    "toolguard": "pinned"
+  }
+}
