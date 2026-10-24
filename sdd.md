@@ -36,7 +36,7 @@ Dependency direction: api depends on core; core depends on rules, ingest, llm, r
 
 ## 3. Configuration (config module)
 
-Settings are read from environment variables and a local .env file using pydantic-settings. The loader validates them at startup and fails fast with a clear message if a value is invalid. Names in the existing .env (groq_api_key and openrouter_api_key) are kept. pydantic-settings matches names case-insensitively by default, so the lowercase names work (confirmed in M0 and covered by a test).
+Settings are read from environment variables and a local .env file using pydantic-settings. The loader validates them at startup and fails fast with a clear message if a value is invalid, including zero or negative values for the M4 AI settings (tpm_groq, the timeouts and waits, and the cache TTL) and an empty judge_model_family. Names in the existing .env (groq_api_key and openrouter_api_key) are kept. pydantic-settings matches names case-insensitively by default, so the lowercase names work (confirmed in M0 and covered by a test).
 
 Provider keys are optional. The service never refuses to start because a key is missing. With neither key set, every scan runs rules-only and reports ai_review_status as disabled with reason no_provider_keys. With only one key set, the model list contains only that provider's models.
 
@@ -49,10 +49,17 @@ Provider keys are optional. The service never refuses to start because a key is 
 | daily_budget_groq_requests, daily_budget_groq_tokens | Safety budgets below provider limits (section 10) | about 90 percent of provider limits |
 | daily_budget_openrouter_requests | Safety budget for the shared free-model daily counter | set below 50 |
 | rpm_groq, rpm_openrouter | Per-minute request caps | 30 and 20, adjustable |
+| tpm_groq | Groq tokens per minute cap; used alone until a quota header snapshot exists, and always as a cap | 7,200 |
+| ai_request_timeout_seconds | Timeout of one model request | 60 |
+| ai_max_wait_seconds | Longest an attempt waits for a rate limit before returning a refusal | 20 |
+| ai_default_cooldown_seconds | Cooldown after a 429 without a usable retry-after or reset header | 60 |
+| openrouter_reasoning_effort | Reasoning effort sent to the OpenRouter fallback models (none, minimal, low, medium, high, xhigh, max) | low; lower values only after the supported efforts per model are checked |
+| judge_model_family | Model family part of the cache key; change it to invalidate cached verdicts | gpt-oss |
+| judge_cache_ttl_days | Days a cached verdict stays valid | 30 |
 | judge_max_tools_per_call | Batch size cap | small integer, tuned by token budget |
 | judge_max_tools_per_scan | Per-scan cap on tools sent to AI review (section 8) | small integer, tuned by quota |
 | judge_output_tokens_per_tool | Output allowance per tool in a batch, including reasoning (section 11.5) | about 250, calibrated in M5 |
-| judge_reasoning_effort | Reasoning effort requested from models that support it | low |
+| judge_reasoning_effort | Reasoning effort requested from the Groq primary model | low |
 | default_fail_on | Fail threshold used when a request does not give one | high |
 | judge_max_input_tokens | Estimated input token cap per call | tuned to per-minute token limit |
 | ingest_max_bytes, ingest_timeout_seconds, ingest_max_redirects | Ingestion limits | conservative values |
@@ -99,6 +106,7 @@ Normalization rules: text fields are stored exactly as received. For hashing onl
 | text | The matched excerpt |
 | start, end | Character (code point) offsets within the field. Clients in UTF-16 environments, such as JavaScript, must convert them. Offsets always refer to the original stored text, never to the neutralized text shown in a report (section 17) |
 | context | Short surrounding text |
+| offsets_in | What start and end refer to: field_text (the stored text of the field), schema_excerpt (compact JSON of a schema value), or none (a note written by the rule, start equal to end). Set when the report is built |
 
 ### 4.4 Finding
 | Field | Description |
@@ -298,16 +306,26 @@ Pydantic AI's FallbackModel is not used. The M0 spikes and the framework documen
 
 Provider client retries are set to zero (max_retries 0 in the model settings). The Groq and OpenAI clients that Pydantic AI builds otherwise retry twice on their own, which would hide real calls from the ledger and delay moving to the next model.
 
+M4 implementation (llm/provider.py): build_chain(settings) returns the ordered list of ModelSpec items (provider, model name, Pydantic AI model, model settings). Each has temperature 0, max_retries 0, and the request timeout; Groq gets groq_reasoning_effort from judge_reasoning_effort, and OpenRouter models get openrouter_reasoning with openrouter_reasoning_effort. The output limit is set per call by the judge. The Groq SDK takes an httpx client and the OpenAI SDK used for OpenRouter (openai 3.x) takes an httpx2 client; one client per provider is built, each with the response hook.
+
+An attempt is one HTTP request to one model. run_attempt reserves with the ledger, runs the call the judge passes in, classifies the outcome, and settles the ledger. The judge runs its agent with output retries set to 0 (Pydantic AI Agent retries={"output": 0}, or retries=0), so an invalid answer raises after exactly one request and never becomes a second, unreserved request inside an attempt.
+
 ### 9.3 Rate limiting
 A limiter per provider enforces the per-minute request cap (rpm_groq, rpm_openrouter). For Groq, the tokens-per-minute budget comes from the response headers (section 10): before each call the estimated tokens (section 10.2) must fit in the tokens currently available, otherwise the call waits for the bucket to refill or the loop moves on. Concurrency is capped so batches do not overlap beyond the limits.
 
-Quota headers are read by a response event hook on the httpx client passed to each provider, so only the model layer sees provider details.
+Quota headers are read by a response event hook on the HTTP client passed to each provider, so only the model layer sees provider details. Confirmed on the real Groq client by the M4 smoke run (spikes/FINDINGS.md section 10), which also confirmed one request per attempt and reasoning effort low on both providers. The hook keeps only the x-ratelimit-* headers and retry-after, and counts responses per attempt. Durations such as 10m4.8s, 592ms, 2m59.56s, 1h2m, or 2d are parsed; any missing, malformed, negative, or implausibly large value (counts above ten million, durations above seven days, retry-after above one day) discards the whole snapshot, and the ledger falls back to its own counters. A rate limit wait of up to ai_max_wait_seconds is waited out once with asyncio.sleep; a longer one is returned as a refusal so the judge moves on. Ledger database work runs in a worker thread, so the event loop is never blocked.
 
 ### 9.4 Failure handling
-- 429 or quota error: mark the provider as cooling down until retry-after (or the header-derived refill time), then the judge moves to the next model.
-- Authentication error: mark the provider unavailable for the process lifetime and log a clear configuration message without the key.
-- Timeout, connection error, or server error: no retry on the same model; the judge moves to the next model.
+An attempt returns one of three typed results: Succeeded (the value, requests, and tokens), Refused (a reason and a retry time: provider_disabled, cooling_down, rate_limited, budget_exhausted, too_large, payment_required), or Failed (a kind, the status code, and a cooldown time). Results, log lines, and the database never contain provider error text, which can quote the request (scanned text) or the key.
+- 429: Failed rate_limited. Cooldown from retry-after, else the reset of an exhausted bucket in the headers, else ai_default_cooldown_seconds. The judge moves to the next model.
+- 402 (credits or balance): Refused payment_required, with a cooldown until at least the next UTC midnight. Not treated as an authentication error.
+- 401 (invalid key): Failed auth. The provider is disabled for the process lifetime, and a clear configuration message is logged without the key.
+- 403: Failed forbidden, with no cooldown and no disabling. A 403 can be a content moderation block on one input, and scanned text is hostile by design, so a crafted tool description must never be able to switch AI review off for everyone.
+- Timeout, connection error, 5xx, or another status: Failed, no cooldown, no retry on the same model; the judge moves to the next model.
+- Invalid output: Failed invalid_output after one request.
 - All models unavailable or exhausted: the judge returns a quota or provider result that the pipeline turns into a degraded scan.
+
+Cooldowns and limits come only from real 429 and 402 responses, their headers, and settings; never from response bodies or scanned text.
 
 ## 10. Budget Ledger (llm.budget)
 
@@ -343,6 +361,16 @@ OpenRouter sends no rate limit headers on successful responses. Its free_model_d
 - Counters and the snapshot are persisted in SQLite and loaded on startup so restarts do not reset usage.
 - Single-instance assumption: counters are local. Multiple instances would need a shared store.
 
+M4 implementation (llm/budget.py):
+- Reserve before each attempt and settle after it. Reserving runs in one BEGIN IMMEDIATE transaction that reads the cooldown, the snapshot, and the call log, checks every limit, and inserts a reserved row with the estimate. SQLite's write lock serializes concurrent reservations from threads, tasks, and processes sharing the file, and open reservations count at their estimate, so concurrent calls cannot overcommit.
+- Our own counters always apply (rpm, tpm_groq, and the daily budgets); the Groq header snapshot applies on top when it exists, minus attempts reserved after it was observed. The snapshot's token bucket is used only within a minute of the observation, after which our own minute counter covers it.
+- Settling records the outcome, the real request count (at least 1), and the actual tokens when known; otherwise the estimate stays.
+- A reservation older than the request timeout plus 30 seconds becomes abandoned (a crash or a hang). It still counts at its estimate for the daily totals but no longer holds the per-minute window.
+- OpenRouter: requests today are the larger of our own count since 00:00 UTC and the reported used value plus our own calls since that reading. A reported limit can lower daily_budget_openrouter_requests, never raise it. read_openrouter_key_info keeps the last reading in memory and reads at most once every 10 minutes per process; it is never called before each attempt.
+- Per process only: the provider-disabled flag after a 401 and the cached key info. The ledger itself is consistent across threads and processes through SQLite, but the first deployment runs a single worker so these flags hold for the whole service (to revisit in M6).
+- The token estimate formula (section 10.2) belongs to the judge and is calibrated in M5; M4 takes the estimate as an argument.
+- Token accounting, current behavior: a reserved attempt counts its estimate; once settled with known usage it counts actual input plus output tokens, in both the per-minute window and the daily total. Observation (M4 smoke run, one data point, unconfirmed): Groq's per-minute bucket dropped by input plus the full output limit (537 for 139 input, 42 output, and a 400 limit), so Groq appears to charge the reserved amount at request time. Whether the daily token limit charges the reserved or the actual amount is unknown. A change is proposed and awaits the owner's decision.
+
 ## 11. Judge Design (llm.judge)
 
 ### 11.1 Input assembly
@@ -370,7 +398,7 @@ Tools are grouped into batches under both a tool-count cap and an estimated inpu
 - Temperature 0.
 - Reasoning effort set to the lowest each model allows (judge_reasoning_effort, default low). For Groq gpt-oss this is reasoning_effort low; reasoning_format is not supported for gpt-oss.
 - Output limit per call = judge_output_tokens_per_tool times the tools in the batch. Reasoning tokens count as output on both providers, and in M0 a 5-token limit on OpenRouter returned only reasoning, so the limit must leave room for reasoning plus the structured answer. A response cut off by the limit fails validation and is handled by section 11.7.
-- Provider client retries set to zero (section 9.2).
+- Provider client retries set to zero (section 9.2), and output retries set to zero (section 11.7).
 
 ### 11.6 Versioning
 The judge prompt has a version string. Any change that could alter results increments it, which invalidates affected cache entries.
@@ -378,14 +406,14 @@ The judge prompt has a version string. Any change that could alter results incre
 ### 11.7 Model loop, retries, and degradation
 The judge loops over the ordered model list from section 9.2 for each batch:
 1. Ask the budget ledger whether the model's provider can take this call (cooldown, rate limits, and the token estimate). If not, move to the next model.
-2. Run the agent with that model (agent.run with the model argument), one output validation retry, and provider client retries at zero.
+2. Run the agent with that model (agent.run with the model argument) through the model layer's run_attempt, with output retries and provider client retries at zero, so the attempt is exactly one reserved request.
 3. Record the outcome and actual usage with the ledger, including the quota headers read by the model layer. This happens after every attempt, successful or not.
 4. On success, return the validated verdicts.
 5. On a provider error (ModelAPIError: rate limit, quota, server error, timeout, connection, authentication), apply the failure handling in section 9.4 and move to the next model.
-6. On invalid output (UnexpectedModelBehavior after the validation retry, including content filter and incomplete tool call), move to the next model.
+6. On invalid output (UnexpectedModelBehavior, including content filter and incomplete tool call), start a new attempt through the ledger: the same model once, or the next model.
 7. If no model succeeds, the batch is marked unreviewed and the scan is flagged degraded with reason quota_exhausted, provider_unavailable, or judge_output_invalid, whichever applied to the last attempt.
 
-One attempt therefore costs at most 2 requests on a model (the call and one validation retry), and the ledger counts each.
+One attempt therefore costs exactly one request, reserved before it is made. A validation retry is a new attempt, reserved like any other.
 
 ## 12. Cache Design (llm.cache)
 
@@ -394,6 +422,8 @@ One attempt therefore costs at most 2 requests on a model (the call and one vali
 - Lookup happens before batching; hits are removed from the batch.
 - Retention: entries expire after a configured period or on prompt version change.
 - Cache entries are never shared across different judge prompt versions.
+
+M4 implementation (llm/cache.py, table judge_cache): the key is (content_hash, prompt_version, judge_model_family). The value is the JudgeVerdict JSON, the actual provider and model, and created_at. get() treats an entry older than judge_cache_ttl_days, or one that no longer validates, as a miss; put() deletes expired entries. The prompt version is a required argument; it does not exist until M5, so tests use a fixed test version. Until M5 decides otherwise, put() stores only verdicts from the configured primary model (Groq and primary_model) and returns not_primary_model for any other, so a fallback model's verdict is never served later as the primary one.
 
 ## 13. Error Taxonomy
 
@@ -443,12 +473,12 @@ SQLite with the following tables.
 | scans | id, target, target_type, status, current_stage, fail_on, verdict, ai_review_status, ai_review_reason, degraded_reason, failure_code, failure_message, created_at, started_at, finished_at, report_json, versions |
 | tools | id, scan_id, position, server_name, name, title, content_hash, description, schema_json, schema_missing, annotations_json (unique per scan_id and position, since tool names need not be unique) |
 | findings | scan_id and id (together the primary key; id is the scan-local "position:rule_id"), tool_id, source, rule_id, category, severity, evidence_json, explanation, suggested_action, confidence, review_note, fingerprint |
-| judge_cache | content_hash, prompt_version, model_family, verdict_json, provider, model, created_at |
-| ai_calls | id, provider, model, called_at, estimated_tokens, input_tokens, output_tokens, outcome (call log for rolling windows, section 10.1) |
-| provider_quota | provider, observed_at, limit_requests, remaining_requests, reset_requests, limit_tokens, remaining_tokens, reset_tokens, cooldown_until, reported_daily_used (Groq header snapshot, cooldowns, and the OpenRouter cross-check reading) |
+| judge_cache | content_hash, prompt_version, model_family (together the primary key), verdict_json, provider, model, created_at |
+| ai_calls | id, provider, model, status (reserved, settled, or abandoned), reserved_at, finished_at, outcome, requests, estimated_tokens, input_tokens, output_tokens (call log for rolling windows, section 10.1; indexed by provider and reserved_at) |
+| provider_quota | provider, observed_at, limit_requests, remaining_requests, reset_requests, limit_tokens, remaining_tokens, reset_tokens, cooldown_until, reported_daily_used, reported_daily_limit, reported_at (Groq header snapshot, cooldowns, and the OpenRouter cross-check reading) |
 | false_positive_marks | id, rule_id, tool_content_hash, created_at, note (local, optional, later version) |
 
-Design notes: foreign keys enforced, indexes on scan_id, content_hash, and ai_calls by provider with called_at, plus indexes that support the API's list filters and sorts (scans by created_at, findings by scan_id with severity and category, findings by fingerprint). Writes happen at the end of stages that need durability: scan creation, completion, cache writes, and budget updates. The M3 tables are scans, tools, and findings; the others come with the milestones that use them.
+Design notes: foreign keys enforced, indexes on scan_id, content_hash, and ai_calls by provider with called_at, plus indexes that support the API's list filters and sorts (scans by created_at, findings by scan_id with severity and category, findings by fingerprint). Writes happen at the end of stages that need durability: scan creation, completion, cache writes, and budget updates. The M3 tables are scans, tools, and findings (migration 1). Migration 2 (M4) adds ai_calls, provider_quota, and judge_cache, with ledger times stored as UTC seconds since the epoch. false_positive_marks comes later.
 
 Access (M3): the standard library sqlite3 module, no extra dependency. Every operation opens its own short-lived connection with foreign keys on and a 5 second busy timeout, and every write is one explicit BEGIN IMMEDIATE transaction, so threads never share a connection. Tools, findings, and the report of a scan are written in one transaction. The file uses WAL mode so reads and a write can overlap; if another connection holds a lock when a connection tries to switch a new file to WAL, it keeps the current mode, since correctness does not depend on WAL. One process only (section 23). The Markdown report is not stored; it is rendered from report_json, which is deterministic. The database file and its -wal, -shm, and -journal side files are ignored by git, since all of them can hold scanned text.
 
@@ -503,7 +533,7 @@ Safe presentation in detail (M3, reporting/safe.py and the two renderers):
 
 JSON report schema notes (report_schema "1"; adding a field does not change the version, removing or redefining one does):
 - Evidence start and end always refer to the original stored text of the field. The neutralized evidence text can be longer or shorter than end minus start, because hidden characters are replaced by names and long excerpts are cut with a marker.
-- Exceptions: for structural evidence (compact JSON of a schema value, such as a parameter definition), start and end cover that JSON text, not stored text; evidence written by a rule as a note, such as "(no input schema)" or the scan-cap note, has start equal to end.
+- Exceptions: for structural evidence (compact JSON of a schema value, such as a parameter definition), start and end cover that JSON text, not stored text; evidence written by a rule as a note, such as "(no input schema)" or the scan-cap note, has start equal to end. Each evidence item says which case applies in offsets_in (field_text, schema_excerpt, or none), and the Markdown report says it next to the offsets, for example "characters 0 to 79 of the schema excerpt".
 
 ## 18. API Design (api)
 
@@ -532,7 +562,8 @@ The findings and tools endpoints serve the frontend's report screen. The report 
 - Scan IDs are unique and unguessable.
 - Request size limits and rate limits protect the service.
 - Interactive documentation is generated from the schemas.
-- Evidence offsets (start, end) are code point positions in the original stored text, not in the neutralized text shown, which can differ in length. Exception: structural evidence (compact JSON of a schema value) has offsets that cover that JSON text, and rule notes have start equal to end; clients must not use those offsets to highlight stored text (section 17).
+- The API never serves database rows directly. Stored tool text and finding explanations are kept as received (section 15), so every response that carries scanned text is built from the neutralized report (section 17), never from the tools or findings tables.
+- Evidence offsets (start, end) are code point positions in the original stored text, not in the neutralized text shown, which can differ in length. Exception: structural evidence (compact JSON of a schema value) has offsets that cover that JSON text, and rule notes have start equal to end; clients must not use those offsets to highlight stored text (section 17). Clients tell the cases apart by the evidence field offsets_in.
 
 ### 18.3 Scan summary and progress
 GET /v1/scans/{id} returns: scan_id, target, label, status, current_stage, completed_stages, fail_on, verdict (once completed), counts by severity and by category, tool_count, top findings (at most five, highest severity first), ai_review_status with reason code and message, degraded and degraded_reason, unreviewed tool count, failure (code and message, only when failed), and timestamps. Scan history items use the same shape without top findings.
@@ -552,7 +583,7 @@ Every error response uses one body shape: an error object with code (a stable ma
 CORS is off by default. When cors_allowed_origins is set, only those exact origins are allowed, never a wildcard. Allowed methods are GET and POST; allowed headers are Authorization and Content-Type.
 
 ### 18.7 Access control
-Because every scan can consume the owner's free AI quota, a public deployment must not be open. The optional service access token is sent as a bearer token in the Authorization header and checked on all routes except health. If unset, the service should run only locally or behind a private network. Real user accounts are out of scope. Per-client rate limiting is a later improvement.
+Because every scan can consume the owner's free AI quota, a public deployment must not be open. The optional service access token is sent as a bearer token in the Authorization header and checked on all routes except health. If unset, the service should run only locally or behind a private network. Real user accounts are out of scope. Every scan can spend the free AI quota, so the access token and per-client request limits must both be in place before any public deployment (M6). The first deployment runs a single worker, because the provider-disabled flag and the cached OpenRouter key info are per process (section 10.5).
 
 ### 18.8 CI use
 CI is served by the API, not by a separate tool. A pipeline submits a scan with fail_on, polls until the scan completes, and fails the job when verdict is fail. The summary's counts and top findings give the log enough to show which tool and text caused the failure. Pipelines that require full AI review can also fail when degraded is true.
@@ -563,13 +594,14 @@ CI is served by the API, not by a separate tool. A pipeline submits a scan with 
 - Screen to endpoint mapping (screens from pdd.md section 11): New scan uses POST /v1/scans; Scan progress polls GET /v1/scans/{id}; Report uses the scan summary plus the findings and tools endpoints; History uses GET /v1/scans; Budget uses GET /v1/budget.
 - Scanned text in API responses is untrusted. The backend returns it as plain strings with invisible and control characters made visible by name (section 17). The frontend must render it as text, never as HTML or Markdown.
 - The Markdown report is meant for download and viewing as plain text, not for rendering scanned content as markup.
-- Highlighting evidence: offsets (start, end) are code point positions in the original stored text, not in the neutralized text shown, which can differ in length. Exception: structural evidence (compact JSON of a schema value) has offsets that cover that JSON text, and rule notes have start equal to end; clients must not use those offsets to highlight stored text (section 17). Offsets are code points, so JavaScript must convert them from UTF-16 indices.
+- Highlighting evidence: offsets (start, end) are code point positions in the original stored text, not in the neutralized text shown, which can differ in length. Exception: structural evidence (compact JSON of a schema value) has offsets that cover that JSON text, and rule notes have start equal to end; clients must not use those offsets to highlight stored text (section 17). Clients tell the cases apart by the evidence field offsets_in. Offsets are code points, so JavaScript must convert them from UTF-16 indices.
 - The Markdown report shows non-ASCII characters as [U+XXXX] (section 17); the frontend should build its views from the JSON or the API, which keep the original text.
 
 ## 20. Logging and Observability
 
 - Structured logs per stage with scan ID, stage name, duration, and counts.
-- AI call logs include provider, model, estimated and actual tokens, outcome, and fallback path. They never include keys. Scanned content is truncated or hashed in logs.
+- AI call logs include provider, model, estimated and actual tokens, outcome, and fallback path. They never include keys. Scanned content is truncated or hashed in logs. Since M4, each attempt logs one line: provider, model, outcome, status code, duration, requests, and estimated and actual tokens. Exceptions from providers are never logged, since their text can quote the request.
+- HTTP library loggers: when the app configures logging (M6), the httpx, httpcore, httpx2, and httpcore2 loggers are set to warning level by default, because at info level they log every request with its full URL. No URL with credentials or a query string is ever logged; this matters from M7, when scanned target URLs may carry tokens in query strings. The M4 smoke run showed such request lines because the script silenced only the httpx logger.
 - Pydantic AI instrumentation emits standard traces that can be sent to any compatible backend later.
 - Basic counters: scans, findings by severity, AI calls, cache hits, degraded scans.
 
@@ -592,7 +624,9 @@ CI is served by the API, not by a separate tool. A pipeline submits a scan with 
 | Triage | Table-driven tests of the decision policy, the suspicion signals, and the suspicion order under the cap |
 | Scoring | Deterministic tests for deduplication, severity, and verdict thresholds |
 | Model layer | Fake models to simulate success, rate limits, errors, and invalid output; recorded quota headers parsed correctly; no real quota used |
-| Budget ledger | Tests for the Groq refill calculation from a snapshot, rolling windows from the call log, restart without a snapshot, cooldowns, the OpenRouter larger-of cross-check, and exhaustion |
+| Budget ledger | Tests for the Groq refill calculation from a snapshot, rolling windows from the call log, restart without a snapshot, cooldowns, the OpenRouter larger-of cross-check, and exhaustion. M4 adds an injected clock, concurrent reservations from threads and tasks, abandoned reservations, UTC day boundaries, and reported limits that may lower but never raise the budget |
+| Model layer (M4) | The real Groq and OpenRouter providers over mock HTTP transports (httpx and httpx2): success with quota headers, 429 with and without usable headers, 401, 402, 403 from hostile input, 5xx, timeouts, connection errors, invalid output in one request, malformed headers, and a test that provider error bodies and fake keys never reach results, logs, or the database. An autouse fixture blocks name lookups and socket connections, so no test can reach a real host |
+| Cache (M4) | Hit, miss by hash, prompt version, and family, expiry and purge, corrupt entries, and refusal of verdicts not from the primary model |
 | Judge | Authority rule tests, batching tests, the model loop (provider error then next model, invalid output then next model, all models failing gives a degraded scan), and recorded-response tests |
 | Pipeline | End-to-end runs on the fixture corpus with a fake model, including degraded paths |
 | API | Contract tests for every endpoint, the OpenAPI schema snapshot, error shapes and codes, pagination, filters and sorting, CORS on and off, and the access token |
@@ -647,8 +681,10 @@ Closed in M3:
 
 Still open:
 1. Whether OpenRouter's free_model_daily_requests counter is shared across all free models. M0 only called one model. Treated as shared until proven otherwise (section 10.4).
-2. OpenRouter's daily reset time. The documentation implies the UTC day but does not state it (section 10.4).
+2. OpenRouter's daily reset time. Since October 2026 the documentation describes free_model_daily_requests as counted per current UTC day, with used, limit, and remaining (section 10.4); the M4 smoke run confirmed that shape, but the reset has not been observed across midnight, and the counter lag and the shared pool are still unmeasured (spikes/06_m4_smoke.py --key-info-only reads the counter again at no quota cost).
 3. Calibration of token estimates and judge_output_tokens_per_tool on the real fixture corpus in M5 (sections 10.2 and 11.5).
-4. Whether the Groq refill behavior holds for other limits and over longer periods, checked by the live smoke test (section 10.3).
+4. Whether the Groq refill behavior holds for other limits and over longer periods, checked by the live smoke test (section 10.3). The M4 smoke run confirmed the refill of one request every 86.4 seconds on the real client.
 5. Which MCP HTTP transports and authentication schemes to support first.
 6. Which streaming transport to add for progress later (server-sent events or WebSocket).
+7. Which reasoning efforts each OpenRouter fallback model supports. OpenRouter's public model listing has no reasoning effort field for either model (M4 smoke run), so openrouter_reasoning_effort stays low.
+8. Whether Groq's daily token limit charges the reserved amount (input plus the output limit) or the actual tokens (section 10.5).

@@ -102,16 +102,18 @@ The only place that knows about providers.
 - Per-model settings, since each provider has different optimal settings. Provider client retries are set to zero so the ledger sees every real call.
 - Reads Groq quota headers on every response through an HTTP client hook and passes them to the budget ledger.
 - Concurrency and request-rate limiting so calls stay under per-minute limits (30 per minute on Groq, 20 per minute on OpenRouter free models, as of October 2026 documentation).
-- Both providers are supported natively by Pydantic AI, so no custom adapters are needed.
+- Both providers are supported natively by Pydantic AI, so no custom adapters are needed. The Groq SDK takes an httpx client and the OpenAI SDK used for OpenRouter takes an httpx2 client; each gets the quota header hook.
+- Since M4 (llm/provider.py): one attempt is one reserved request. The judge runs its agent with output retries at zero, so a validation failure becomes a new attempt through the ledger. An attempt returns a typed result (succeeded, refused, or failed with a kind and status code) and never passes on provider error text. A 401 disables a provider for the process; a 403 only fails that attempt, because hostile scanned text could otherwise switch AI review off; a 402 is a refusal with a long cooldown.
 
 ### 3.10 Budget ledger
 Persisted in SQLite and consulted by the judge before and after each model attempt. When a provider cannot take a call, the judge skips it. When none can, the scan service marks the result as degraded and continues without AI review.
 - Groq: quota behaves as a continuously refilling bucket (observed in M0: one request refills every 86.4 seconds at 1,000 per day). The ledger is driven by the rate limit headers on every response, with its own counters for the limits the headers do not report (requests per minute, tokens per day) and for restarts.
 - OpenRouter: our own call count is the source of truth. The account's free_model_daily_requests figure lags by a few minutes and is used only as a cross-check (the larger of the two wins). The free daily counter is treated as one pool shared by all free models until proven otherwise, so listing several free models adds resilience, not quota.
 - Token estimates are input plus the full output limit, because reasoning counts as output.
+- Since M4 (llm/budget.py): each attempt reserves in one SQLite transaction before the call and settles after it, so concurrent calls cannot overcommit. Reservations left open by a crash become abandoned after the timeout. The provider-disabled flag and the cached OpenRouter key info are per process, so the first deployment runs a single worker.
 
 ### 3.11 Cache
-Keyed by a hash of the normalized tool content and the judge prompt version. A hit returns the stored verdict without any AI call. This also makes rescans cheap and enables later change detection.
+Keyed by a hash of the normalized tool content, the judge prompt version, and a configured model family tag. A hit returns the stored verdict without any AI call. This also makes rescans cheap and enables later change detection. Entries expire after a configured number of days, and only verdicts from the primary model are stored until M5 decides otherwise (llm/cache.py).
 
 ### 3.12 Aggregation and scoring
 Merges findings from rules and the judge, removes duplicates, assigns an overall severity and verdict, and records which stage produced each finding. Scoring is deterministic and documented so results are reproducible.
@@ -175,7 +177,7 @@ ToolGuard-be/
     core/               typed models, pipeline, triage, scoring
     ingest/             manifest parsing, MCP HTTP client, URL safety
     rules/              rule registry and rule modules by category
-    llm/                model layer, judge, budget ledger, cache
+    llm/                provider.py (model list and attempts), budget.py (ledger), cache.py; judge in M5
     storage/            SQLite access
     reporting/          JSON and Markdown renderers
   tests/
