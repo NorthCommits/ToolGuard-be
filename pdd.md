@@ -144,7 +144,7 @@ A visible banner at the top of the report: AI review was skipped or partial, the
 Disabled AI review is not degraded, because nothing failed: AI review was turned off for the scan or no provider keys are configured. The report shows a neutral notice in place of the banner, for example: "AI review was not used for this scan (turned off for this scan). Findings come from deterministic rules only." or "(no AI provider keys are configured)". The verdict block repeats a short form, and the API scan summary carries the disabled status and its reason, so a rules-only result is never mistaken for full coverage.
 
 ### 7.6 Safe presentation
-Scanned text is untrusted. In every format, it is shown inside clearly delimited evidence blocks, with control and invisible characters made visible and markup neutralized, so that viewing a report cannot trigger the very attack being reported.
+Scanned text is untrusted. In every format, it is shown inside clearly delimited evidence blocks, with control and invisible characters made visible and markup neutralized, so that viewing a report cannot trigger the very attack being reported. Links in scanned text are defanged (for example "https[:]//", "evil[.]com", "name[@]host"), so no report format turns them into clickable links.
 
 ## 8. Terminology
 
