@@ -64,3 +64,27 @@ def test_secrets_never_appear_in_output(monkeypatch: pytest.MonkeyPatch) -> None
 def test_wildcard_cors_origin_is_rejected() -> None:
     with pytest.raises(ValidationError, match="not allowed"):
         Settings(_env_file=None, cors_allowed_origins=["*"])
+
+
+@pytest.mark.parametrize(
+    ("name", "value"),
+    [
+        ("tpm_groq", 0),
+        ("judge_cache_ttl_days", 0),
+        ("ai_request_timeout_seconds", -1),
+        ("ai_max_wait_seconds", 0),
+        ("ai_default_cooldown_seconds", 0),
+        ("judge_model_family", " "),
+        ("openrouter_reasoning_effort", "lowest"),
+    ],
+)
+def test_nonsense_ai_settings_are_rejected(name: str, value: object) -> None:
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None, **{name: value})
+
+
+def test_ai_setting_defaults() -> None:
+    settings = Settings(_env_file=None)
+    assert (settings.tpm_groq, settings.judge_cache_ttl_days) == (7_200, 30)
+    assert settings.openrouter_reasoning_effort == "low"
+    assert settings.ai_max_wait_seconds == 20

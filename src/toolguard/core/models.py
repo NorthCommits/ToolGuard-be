@@ -107,6 +107,14 @@ class Tool(BaseModel):
     content_hash: str
 
 
+class OffsetBasis(StrEnum):
+    """What an evidence item's start and end refer to."""
+
+    FIELD_TEXT = "field_text"  # the stored text of the field
+    SCHEMA_EXCERPT = "schema_excerpt"  # compact JSON of a schema value, not stored text
+    NONE = "none"  # a note written by the rule; start equals end
+
+
 class Evidence(BaseModel):
     """Where a finding matched. start and end are character (code point) offsets in the field."""
 
@@ -115,6 +123,7 @@ class Evidence(BaseModel):
     start: int = Field(ge=0)
     end: int = Field(ge=0)
     context: str = ""
+    offsets_in: OffsetBasis = OffsetBasis.FIELD_TEXT
 
     @model_validator(mode="after")
     def _end_after_start(self) -> "Evidence":

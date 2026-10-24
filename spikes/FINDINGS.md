@@ -140,6 +140,27 @@ Resolved and applied to the design documents:
 
 Still open (listed in sdd.md section 25):
 - Whether OpenRouter's free counter is shared across all free models.
-- OpenRouter's daily reset time.
+- OpenRouter's daily reset time (documented since October 2026 as the UTC day, not yet observed).
 - Calibration of token estimates on the real fixture corpus in M5.
 - Whether the Groq refill behavior holds over longer periods, checked by the live smoke test.
+
+## 10. M4 smoke test (spike 06)
+
+Date: 2026-10-24. spikes/06_m4_smoke.py was run manually by the owner with both keys set. It made 4 real HTTP requests: the public OpenRouter model listing, the OpenRouter key info, one Groq completion, and one OpenRouter completion. The ledger used a temporary database. No account, user, or workspace identifiers are recorded here.
+
+| Check | Result |
+|---|---|
+| 1. OpenRouter model listing (public, no key) | nvidia/nemotron-3.5-super-vl:free and google/gemma-4-26b-a4b-it:free are both listed. Neither entry has any field mentioning reasoning effort, so the supported efforts per model remain unverified. |
+| 2. OpenRouter key info | Shape as documented and as the code reads it: data.free_model_daily_requests with used 0, limit 50, remaining 50. Read before the completion, so the counter lag and the shared pool are still unmeasured. |
+| 3. Groq completion through run_attempt | Succeeded with one request (client retries 0, output retries 0, reasoning effort low): 139 input and 42 output tokens. The response hook on the real httpx client delivered the quota headers to the ledger: requests limit 1,000, remaining 999, reset 86.4 s; tokens limit 8,000, remaining 7,463, reset 4.027 s. |
+| 4. OpenRouter completion through run_attempt | Succeeded with one request on the httpx2 client, with reasoning effort low: 290 input and 52 output tokens. |
+
+Readings:
+- Groq's request reset of 86.4 s after one request is exactly one request of a 1,000 per day bucket that refills continuously, which confirms spike 04 (section 4) on the real client.
+- Token debit (unconfirmed, one data point): the token bucket dropped by 537 although the call reported 181 tokens. 139 input plus the 400 output limit is 539, and a reset of 4.027 s is 537 / 8,000 x 60 s. So Groq appears to charge the per-minute bucket input plus the full output limit at request time. Whether the 200K daily token limit charges the reserved or the actual amount is unknown, since no header reports it.
+- Both providers returned structured output in tool output mode with one request each.
+- The smoke script's own logging setup let httpx2 print request lines with full URLs at info level (it silenced only the httpx logger). ToolGuard code does not configure logging. Rule recorded in sdd.md section 20: the httpx, httpcore, httpx2, and httpcore2 loggers stay at warning level, and URLs with credentials or query strings are never logged.
+
+Follow-ups:
+- Run spikes/06_m4_smoke.py --key-info-only a few minutes after a completion (1 free request) to see the counter move to 1 and measure the lag.
+- Decide how the ledger accounts Groq tokens per minute and per day (sdd.md section 10.5), given the observed debit.

@@ -160,14 +160,14 @@ Done when: ingestion tests pass for valid and invalid manifests.
 
 Done when: every implemented rule has positive and negative fixtures and passing tests.
 
-### M3: Storage and non-AI pipeline
+### M3: Storage and non-AI pipeline (done)
 - SQLite storage for scans, tools, and findings.
 - Pipeline that runs ingest, rules, aggregation, scoring, and reporting without any AI.
 - JSON and Markdown reports following pdd.md, including safe presentation of evidence.
 
 Done when: a manifest can be scanned end to end without AI and produces both report formats.
 
-### M4: Model layer, budget ledger, cache
+### M4: Model layer, budget ledger, cache (done)
 - Ordered model list (Groq first, then the OpenRouter fallback models) with per-model settings, provider client retries set to zero, and the lowest reasoning effort each model allows (sdd.md sections 9 and 11.5). No FallbackModel.
 - Groq quota headers read on every response through an httpx client hook.
 - Budget ledger persisted in SQLite (sdd.md section 10): the Groq refilling bucket from header snapshots, rolling-window counters from the call log for limits the headers do not report and for restarts, cooldowns, OpenRouter counted by ToolGuard with the larger-of cross-check, and token estimates of input plus the full output limit.
@@ -195,11 +195,13 @@ Done when: pipeline tests cover normal, cached, degraded, provider-error, and in
 - CORS through a setting, off by default, and the optional service access token.
 - A committed OpenAPI schema snapshot and a test that fails when the schema changes unintentionally.
 - The fixture regression suite already exists (from M2) and must keep passing.
+- Logging: when the app configures logging, the httpx, httpcore, httpx2, and httpcore2 loggers stay at warning level, and no URL with credentials or a query string is ever logged (sdd.md section 20).
+- Before any public deployment: the access token and per-client request limits, since every scan can spend the free AI quota; a single worker, since some provider state is per process (sdd.md sections 10.5 and 18.7).
 
 Done when: API contract tests (including the OpenAPI snapshot, error shapes, pagination, filters, CORS, and the access token) pass, and the fixture regression suite still passes.
 
 ### M7: Remote ingestion, hardening, README
-- Remote MCP ingestion over HTTP with address safety and limits.
+- Remote MCP ingestion over HTTP with address safety and limits. Target URLs can carry tokens: strip credentials and query strings before storing, showing, or logging them, and never store target_token (sdd.md sections 13 and 20).
 - README following the onboarding structure in pdd.md, Dockerfile, and deployment notes.
 - Final review against the security rules in section 6.
 

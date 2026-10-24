@@ -11,7 +11,7 @@ import json
 from collections.abc import Sequence
 from typing import Any
 
-from toolguard.core.models import Evidence, Finding, ScanReport, Tool
+from toolguard.core.models import Evidence, Finding, OffsetBasis, ScanReport, Tool
 from toolguard.core.scoring import position
 from toolguard.rules.text import TextField, char_name, is_hidden, json_evidence, visible
 from toolguard.rules.text import evidence as rule_evidence
@@ -51,6 +51,7 @@ def neutral_evidence(tool: Tool, ev: Evidence) -> Evidence:
     """
     value = _resolve(tool, ev.field)
     field = neutral(ev.field, PATH_CHARS)
+    basis = OffsetBasis.FIELD_TEXT
     if (
         isinstance(value, str)
         and ev.start < ev.end <= len(value)
@@ -69,11 +70,15 @@ def neutral_evidence(tool: Tool, ev: Evidence) -> Evidence:
     elif value is not _MISSING and json_evidence(ev.field, value).text == ev.text:
         # Structural evidence: compact JSON of a schema value; offsets cover that JSON text.
         text = context = neutral(_compact(value), EVIDENCE_CHARS)
+        basis = OffsetBasis.SCHEMA_EXCERPT
     else:
         # A note written by the rule, for example "(no input schema)".
         text = neutral(ev.text, EVIDENCE_CHARS)
         context = neutral(ev.context, EVIDENCE_CHARS + 2 * CONTEXT_CHARS)
-    return Evidence(field=field, text=text, start=ev.start, end=ev.end, context=context)
+        basis = OffsetBasis.NONE
+    return Evidence(
+        field=field, text=text, start=ev.start, end=ev.end, context=context, offsets_in=basis
+    )
 
 
 def neutral_finding(tool: Tool, finding: Finding) -> Finding:

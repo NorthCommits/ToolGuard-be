@@ -56,7 +56,7 @@ Tools not reviewed by AI were checked by rules only.
 - Tool: ` run_command ` (tool 1 in the manifest)
 - Rule: TG-SCH-001, source: rule
 
-Evidence 1 of 1, field ` input_schema/properties/command `, characters 0 to 49:
+Evidence 1 of 1, field ` input_schema/properties/command `, characters 0 to 49 of the schema excerpt:
 
 ```
 {"description":"Command to run.","type":"string"}
@@ -78,7 +78,7 @@ Suggested action: Restrict the parameter with an enum or a pattern\, and validat
 - Tool: ` write_file ` (tool 2 in the manifest)
 - Rule: TG-SCH-002, source: rule
 
-Evidence 1 of 1, field ` input_schema/properties/content `, characters 0 to 2:
+Evidence 1 of 1, field ` input_schema/properties/content `, characters 0 to 2 of the schema excerpt:
 
 ```
 {}
@@ -100,7 +100,7 @@ Suggested action: Give every parameter a type and a short description\.
 - Tool: ` write_file ` (tool 2 in the manifest)
 - Rule: TG-SCH-003, source: rule
 
-Evidence 1 of 1, field ` input_schema/additionalProperties `, characters 0 to 4:
+Evidence 1 of 1, field ` input_schema/additionalProperties `, characters 0 to 4 of the schema excerpt:
 
 ```
 true
@@ -122,7 +122,7 @@ Suggested action: Set additionalProperties to false unless extra fields are requ
 - Tool: ` write_file ` (tool 2 in the manifest)
 - Rule: TG-SCH-006, source: rule
 
-Evidence 1 of 1, field ` input_schema/properties/path `, characters 0 to 44:
+Evidence 1 of 1, field ` input_schema/properties/path `, characters 0 to 44 of the schema excerpt:
 
 ```
 {"description":"File path.","type":"string"}
@@ -166,7 +166,7 @@ Suggested action: Set destructiveHint to true so clients can ask for confirmatio
 - Tool: ` get_status ` (tool 4 in the manifest)
 - Rule: TG-SCH-002, source: rule
 
-Evidence 1 of 1, field ` input_schema `, characters 0 to 0:
+Evidence 1 of 1, field ` input_schema `, a note from the rule, with no text position:
 
 ```
 (no input schema)
@@ -191,6 +191,6 @@ Suggested action: Add an input schema with a type and description for each param
 
 ## Method
 
-ToolGuard checked each tool's name, title, description, annotations, and input schema with deterministic rules for prompt injection, data exfiltration wording, hidden characters, cross-tool manipulation, excessive permissions, naming problems, and unusual structure. It does not run the tools, read the server's code, or see what the tools return at run time.
+ToolGuard checked each tool's name, title, description, annotations, and input schema with deterministic rules for prompt injection, data exfiltration wording, hidden characters, cross-tool manipulation, excessive permissions, naming problems, and unusual structure. It does not run the tools, read the server's code, or see what the tools return at run time. Rules detect known patterns and can miss reworded attacks (on a held-out set of new attacks they fully detected 2 of 11), so AI review matters for coverage.
 
 A result without findings is not a guarantee of safety: ToolGuard only detects the patterns its checks cover.

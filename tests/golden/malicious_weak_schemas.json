@@ -108,6 +108,7 @@
           "context": "{\"description\":\"Command to run.\",\"type\":\"string\"}",
           "end": 49,
           "field": "input_schema/properties/command",
+          "offsets_in": "schema_excerpt",
           "start": 0,
           "text": "{\"description\":\"Command to run.\",\"type\":\"string\"}"
         }
@@ -130,6 +131,7 @@
           "context": "{}",
           "end": 2,
           "field": "input_schema/properties/content",
+          "offsets_in": "schema_excerpt",
           "start": 0,
           "text": "{}"
         }
@@ -152,6 +154,7 @@
           "context": "true",
           "end": 4,
           "field": "input_schema/additionalProperties",
+          "offsets_in": "schema_excerpt",
           "start": 0,
           "text": "true"
         }
@@ -174,6 +177,7 @@
           "context": "{\"description\":\"File path.\",\"type\":\"string\"}",
           "end": 44,
           "field": "input_schema/properties/path",
+          "offsets_in": "schema_excerpt",
           "start": 0,
           "text": "{\"description\":\"File path.\",\"type\":\"string\"}"
         }
@@ -196,6 +200,7 @@
           "context": "delete_records",
           "end": 6,
           "field": "name",
+          "offsets_in": "field_text",
           "start": 0,
           "text": "delete"
         }
@@ -218,6 +223,7 @@
           "context": "",
           "end": 0,
           "field": "input_schema",
+          "offsets_in": "none",
           "start": 0,
           "text": "(no input schema)"
         }

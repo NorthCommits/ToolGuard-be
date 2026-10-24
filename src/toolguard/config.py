@@ -3,7 +3,7 @@
 from pathlib import Path
 from typing import Literal
 
-from pydantic import SecretStr, field_validator
+from pydantic import PositiveFloat, PositiveInt, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 SeverityName = Literal["info", "low", "medium", "high", "critical"]
@@ -31,6 +31,8 @@ class Settings(BaseSettings):
     daily_budget_openrouter_requests: int = 45
     rpm_groq: int = 30
     rpm_openrouter: int = 20
+    # Used until Groq's headers report the real tokens-per-minute bucket, and always as a cap.
+    tpm_groq: PositiveInt = 7_200
 
     judge_max_tools_per_call: int = 5
     judge_max_tools_per_scan: int = 10
@@ -38,6 +40,18 @@ class Settings(BaseSettings):
     # Output allowance per tool, including reasoning tokens; calibrated in M5.
     judge_output_tokens_per_tool: int = 250
     judge_reasoning_effort: Literal["low", "medium", "high"] = "low"
+    # Lowest efforts vary per OpenRouter model, and a reply can be all reasoning (spike 04).
+    openrouter_reasoning_effort: Literal[
+        "none", "minimal", "low", "medium", "high", "xhigh", "max"
+    ] = "low"
+    # Cache key part; change it to invalidate cached verdicts when the primary model changes.
+    judge_model_family: str = "gpt-oss"
+    judge_cache_ttl_days: PositiveInt = 30
+    ai_request_timeout_seconds: PositiveFloat = 60.0
+    # An attempt waits for a rate limit only this long; otherwise the caller moves on.
+    ai_max_wait_seconds: PositiveFloat = 20.0
+    # Cooldown after a 429 that carries no usable retry-after or reset header.
+    ai_default_cooldown_seconds: PositiveFloat = 60.0
     default_fail_on: SeverityName = "high"
 
     ingest_max_bytes: int = 1_000_000
@@ -62,6 +76,13 @@ class Settings(BaseSettings):
         """Treat an empty or whitespace-only value (for example `groq_api_key=`) as not set."""
         if isinstance(value, str) and not value.strip():
             return None
+        return value
+
+    @field_validator("judge_model_family")
+    @classmethod
+    def _family_not_blank(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("judge_model_family must not be empty")
         return value
 
     @field_validator("cors_allowed_origins")

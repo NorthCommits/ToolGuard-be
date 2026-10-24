@@ -12,7 +12,14 @@ No scanned value is ever placed in a table.
 import re
 import string
 
-from toolguard.core.models import AIReviewStatus, Finding, ScanReport, Severity
+from toolguard.core.models import (
+    AIReviewStatus,
+    Evidence,
+    Finding,
+    OffsetBasis,
+    ScanReport,
+    Severity,
+)
 from toolguard.core.scoring import position
 from toolguard.rules.text import char_name
 
@@ -25,7 +32,9 @@ METHOD_NOTE = (
     "with deterministic rules for prompt injection, data exfiltration wording, hidden "
     "characters, cross-tool manipulation, excessive permissions, naming problems, and "
     "unusual structure. It does not run the tools, read the server's code, or see what the "
-    "tools return at run time."
+    "tools return at run time. Rules detect known patterns and can miss reworded attacks (on "
+    "a held-out set of new attacks they fully detected 2 of 11), so AI review matters for "
+    "coverage."
 )
 
 _BACKTICKS = re.compile("`+")
@@ -149,8 +158,7 @@ def _details(finding: Finding) -> list[str]:
     total = len(finding.evidence)
     for number, ev in enumerate(finding.evidence, 1):
         lines += [
-            f"Evidence {number} of {total}, field {code(ev.field)}, "
-            f"characters {ev.start} to {ev.end}:",
+            f"Evidence {number} of {total}, field {code(ev.field)}, {_position(ev)}:",
             "",
             fence(ev.text),
             "",
@@ -167,6 +175,14 @@ def _details(finding: Finding) -> list[str]:
     if finding.review_note:
         lines += [f"Review note: {prose(finding.review_note)}", ""]
     return lines
+
+
+def _position(ev: Evidence) -> str:
+    if ev.offsets_in is OffsetBasis.SCHEMA_EXCERPT:
+        return f"characters {ev.start} to {ev.end} of the schema excerpt"
+    if ev.offsets_in is OffsetBasis.NONE:
+        return "a note from the rule, with no text position"
+    return f"characters {ev.start} to {ev.end}"
 
 
 def _count(count: int, word: str) -> str:

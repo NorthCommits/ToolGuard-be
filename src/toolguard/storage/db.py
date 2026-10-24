@@ -83,6 +83,48 @@ MIGRATIONS: tuple[tuple[str, ...], ...] = (
         "CREATE INDEX findings_tool ON findings (tool_id)",
         "CREATE INDEX findings_fingerprint ON findings (fingerprint)",
     ),
+    # M4: budget ledger and judge cache. Times are UTC seconds since the epoch.
+    (
+        """CREATE TABLE ai_calls (
+            id INTEGER PRIMARY KEY,
+            provider TEXT NOT NULL,
+            model TEXT NOT NULL,
+            status TEXT NOT NULL,
+            reserved_at REAL NOT NULL,
+            finished_at REAL,
+            outcome TEXT,
+            requests INTEGER NOT NULL,
+            estimated_tokens INTEGER NOT NULL,
+            input_tokens INTEGER,
+            output_tokens INTEGER
+        )""",
+        "CREATE INDEX ai_calls_provider_time ON ai_calls (provider, reserved_at)",
+        """CREATE TABLE provider_quota (
+            provider TEXT PRIMARY KEY,
+            observed_at REAL,
+            limit_requests INTEGER,
+            remaining_requests INTEGER,
+            reset_requests REAL,
+            limit_tokens INTEGER,
+            remaining_tokens INTEGER,
+            reset_tokens REAL,
+            cooldown_until REAL,
+            reported_daily_used INTEGER,
+            reported_daily_limit INTEGER,
+            reported_at REAL
+        )""",
+        """CREATE TABLE judge_cache (
+            content_hash TEXT NOT NULL,
+            prompt_version TEXT NOT NULL,
+            model_family TEXT NOT NULL,
+            verdict_json TEXT NOT NULL,
+            provider TEXT NOT NULL,
+            model TEXT NOT NULL,
+            created_at REAL NOT NULL,
+            PRIMARY KEY (content_hash, prompt_version, model_family)
+        )""",
+        "CREATE INDEX judge_cache_created_at ON judge_cache (created_at)",
+    ),
 )
 
 _SURROGATE = re.compile("[\ud800-\udfff]")
@@ -125,7 +167,7 @@ def migrate(conn: sqlite3.Connection) -> None:
     """Apply missing migrations in one transaction. On any error nothing is applied."""
     if _version(conn) == len(MIGRATIONS):
         return
-    with _transaction(conn):
+    with transaction(conn):
         version = _version(conn)  # again under the write lock, in case another thread migrated
         for statements in MIGRATIONS[version:]:
             for statement in statements:
@@ -141,7 +183,7 @@ def _version(conn: sqlite3.Connection) -> int:
 
 
 @contextmanager
-def _transaction(conn: sqlite3.Connection) -> Iterator[None]:
+def transaction(conn: sqlite3.Connection) -> Iterator[None]:
     conn.execute("BEGIN IMMEDIATE")
     try:
         yield
@@ -153,7 +195,7 @@ def _transaction(conn: sqlite3.Connection) -> Iterator[None]:
 
 @contextmanager
 def _write(path: Path) -> Iterator[sqlite3.Connection]:
-    with connect(path) as conn, _transaction(conn):
+    with connect(path) as conn, transaction(conn):
         yield conn
 
 

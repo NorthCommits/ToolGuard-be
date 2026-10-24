@@ -4,7 +4,7 @@ A security scanner and regression harness for the tools that MCP (Model Context 
 
 [![CI](https://github.com/NorthCommits/ToolGuard-be/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/NorthCommits/ToolGuard-be/actions/workflows/ci.yml)
 
-**Status: work in progress (WIP).** Milestones M0 to M3 are done. A manifest can be scanned end to end without AI from Python code, producing JSON and Markdown reports, but there is no HTTP API yet. The next milestone is M4: the model layer, budget ledger, and cache.
+**Status: work in progress (WIP).** Milestones M0 to M4 are done. A manifest can be scanned end to end without AI from Python code, producing JSON and Markdown reports, and the model layer, budget ledger, and cache exist and are tested offline, but nothing calls a model yet and there is no HTTP API. The next milestone is M5: triage and the AI judge.
 
 ## What ToolGuard is
 
@@ -30,7 +30,7 @@ Scans run as a layered pipeline. Deterministic rules check every tool first, at 
 | M1 | Done | Domain models, manifest ingestion, and the first fixture corpus |
 | M2 | Done | Deterministic rule engine with evidence positions |
 | M3 | Done | SQLite storage, the scan pipeline without AI, and JSON and Markdown reports |
-| M4 | Planned | Model layer, budget ledger, and cache, tested with fake models |
+| M4 | Done | Model layer, budget ledger, and cache, tested with fake models |
 | M5 | Planned | Deterministic triage and the AI judge with its model loop |
 | M6 | Planned | Frontend-ready HTTP API |
 | M7 | Planned | Remote MCP ingestion over HTTP, hardening, and deployment |
@@ -41,15 +41,16 @@ Scans run as a layered pipeline. Deterministic rules check every tool first, at 
 - M1: typed domain models (tool, finding, evidence, judge verdict, scan report); manifest ingestion that accepts a bare tool array, an MCP tools/list result, or a full JSON-RPC response, reports all problems at once, enforces size and tool-count limits, and computes a content hash; a first fixture corpus of 2 benign and 6 malicious manifests.
 - M2: a deterministic rule engine with 24 rules (the sdd.md catalog, including TG-SCH-005 and TG-SCH-007 for misleading hints, TG-SCH-006 for unconstrained paths and addresses, TG-SIZ-003 for text past the scan cap, and TG-INJ-004 for text that lifts the model's earlier guidance) covering injection, hidden characters, exfiltration, cross-tool manipulation, schema weakness, naming, and structure. Text rules scan the name, title, description, annotations, and every string and property name in the input schema. Text rules match a folded copy of the text (invisible characters removed, look-alike letters mapped to Latin, compatibility forms folded, and schema words split at underscores and camelCase), while findings carry exact character offsets into the original text, short context, and invisible characters shown by name. Rules can be disabled or given another severity through settings. The fixture corpus grew to 5 benign and 26 malicious manifests, and a pytest regression suite reports the detection and false positive rates. A held-out set of hostile fixtures, written after the rules, measures overfitting and is reported on its own: the first batch (0 of 9 detected on its first run) was used for tuning and moved into the regression tests, and the current batch of 11 was detected 2 of 11 on its first run. Calibration manifests from real servers (the MCP reference servers, Playwright, and GitHub) are used to judge false positives by eye. Tests check every rule for speed on hostile input and for robustness on odd input.
 - M3: SQLite storage for scans, tools, and findings (standard library sqlite3, migrations tracked by the schema version, one transaction per write); a synchronous scan pipeline that runs ingestion, rules, aggregation, scoring, and reporting without AI, records the current stage, and marks a scan failed with a stable error code and a generic message; deduplication, per-tool results, counts, per-rule finding groups, and a stored cross-scan fingerprint per finding; versioned JSON and Markdown reports following pdd.md, with the verdict and the rule behind it, an AI review coverage block that says rules only, and the not-a-guarantee disclaimer. Scanned text is neutralized in both formats: hidden characters shown by name, every cut marked with the number of omitted characters, evidence in code blocks that scanned text cannot close, links defanged, and nothing scanned in tables. Hostile-text tests check both formats, including by parsing the Markdown, and golden files pin the output. The fixture regression suite now runs the full pipeline, with unchanged metrics.
+- M4: the model layer (the ordered model list from settings, client and output retries at zero so every request is one reserved attempt, the lowest configured reasoning effort, and quota headers read through an HTTP client hook), typed attempt results that never carry provider error text, a budget ledger in SQLite (reservations before each call and settlement after it, Groq's refilling bucket from headers with our own counters as backup, OpenRouter counted by us and cross-checked against its reported counter, cooldowns from real 429 and 402 responses only, and abandoned reservations after a crash), and a judge verdict cache with expiry that stores only primary-model verdicts. All tests run offline against fake HTTP responses, with real network access blocked. A manual smoke script (spikes/06_m4_smoke.py) is ready but has not been run.
 - CI: a GitHub Actions workflow runs ruff and pytest on Python 3.11 and 3.12 for every pull request to main and every push to main.
 
 ### Work in progress
 
-- Nothing is in progress. M4 (model layer, budget ledger, and cache) is the next milestone.
+- The M4 smoke script (spikes/06_m4_smoke.py, 4 real requests) is waiting for a manual run by the owner before the M4 pull request. M5 (triage and the AI judge) is the next milestone.
 
 ### Later stages
 
-- M4 to M7 as listed in the table.
+- M5 to M7 as listed in the table.
 - A way to delete stored scans (candidate for M6).
 - After the first version: change detection between scans, sandboxed scanning of local servers, a GitHub Action that calls the API, and streaming scan progress.
 
@@ -113,7 +114,8 @@ ToolGuard-be/
     rules/              registry.py (engine and catalog), one module per rule category
     reporting/          safe.py (neutralizing scanned text), json_report.py, markdown.py
     storage/            db.py (SQLite tables, migrations, and reads and writes)
-    api/  llm/
+    llm/                provider.py (model list and attempts), budget.py (budget ledger), cache.py
+    api/
   tests/
     conftest.py         shared fixtures; prints the fixture corpus metrics after each run
     fixture_corpus.py   runs the fixtures through the pipeline and computes the metrics
@@ -131,7 +133,7 @@ ToolGuard-be/
   spikes/               M0 verification scripts and FINDINGS.md
 ```
 
-The api and llm packages are still empty. They are filled in by milestones M4 to M7.
+The api package is still empty. It is filled in by M6; the judge (M5) joins llm/.
 
 ## Documentation
 
@@ -148,7 +150,7 @@ tests/fixtures/ holds JSON manifests with the expected verdict and findings for 
 
 Limitation: the same author wrote the rules and the fixtures, so the main detection rate mostly shows that the rules match the cases they were written for. The held-out set is a better estimate of real coverage, but it is still an estimate, not a guarantee: on its first run the current batch was detected 2 of 11. Rules miss obfuscated and novel wording by design; the AI judge (M5) is meant to catch what they miss, and reports show which tools were checked by rules only. See tests/fixtures/README.md for the format and the exact definitions, and tests/calibration/README.md for the calibration sources.
 
-In short: the main corpus metrics (currently 100 percent detection, 0 percent false positives) are measured on fixtures written together with the rules, so they are not a measure of real-world coverage. The fresh held-out batch is the more honest number: 2 of 11 fully detected.
+In short: the main corpus metrics (currently 100 percent detection, 0 percent false positives) are measured on fixtures written together with the rules, so they are not a measure of real-world coverage. The fresh held-out batch is the more honest number: 2 of 11 fully detected. Rule-only scanning detects known patterns and can miss reworded attacks, so AI review matters for coverage.
 
 ## Example reports
 
@@ -158,10 +160,12 @@ Known limitation: the Markdown report shows every non-ASCII character as a code 
 
 ## Free tier note
 
-ToolGuard is designed to run on free model quotas only. As read from provider documentation in October 2026, Groq's free tier allows about 1,000 requests and 200,000 tokens per day for the judge model (the request quota refills continuously), and OpenRouter's free models allow 50 requests per day without purchased credits. These limits change. When AI quota is unavailable or keys are missing, scans degrade to rules-only results and the report says so.
+ToolGuard is designed to run on free model quotas only. As read from provider documentation in October 2026, Groq's free tier allows about 1,000 requests and 200,000 tokens per day for the judge model (the request quota refills continuously), and OpenRouter's free models allow 50 requests per day without purchased credits (1,000 with at least 10 credits purchased). These limits change. The ledger keeps usage below configured budgets of about 90 percent of these limits, and uses OpenRouter's own reported counter only to lower its budget, never to raise it. When AI quota is unavailable or keys are missing, scans degrade to rules-only results and the report says so.
 
 ## Security
 
+- Every scan can spend the free AI quota, so the access token and per-client request limits must be in place before any public deployment (M6). The first deployment runs a single worker, because some AI provider state (a provider disabled after an invalid key, and the cached OpenRouter key info) is kept per process; the budget ledger itself is shared through SQLite.
+- Provider keys are read only from settings and are never logged or stored. Provider error text, which can quote the scanned request, never reaches results, logs, or the database.
 - Scanned content (tool names, descriptions, schemas) is treated as untrusted data. Ingestion only parses it as JSON text, and error messages never repeat it. It is never executed or followed as instructions, and reports neutralize it before display: hidden characters are shown by name, cuts are marked, markup and links are neutralized, and evidence sits in code blocks it cannot close.
 - Stored scans keep tool text as received, which can include anything a server published. The database file and its side files are ignored by git. Scans are kept until the database file is deleted.
 - No keys or secrets are stored in this repository. Keys come from environment variables only.

@@ -90,6 +90,6 @@ Suggested action: Remove the direction control characters and review the text as
 
 ## Method
 
-ToolGuard checked each tool's name, title, description, annotations, and input schema with deterministic rules for prompt injection, data exfiltration wording, hidden characters, cross-tool manipulation, excessive permissions, naming problems, and unusual structure. It does not run the tools, read the server's code, or see what the tools return at run time.
+ToolGuard checked each tool's name, title, description, annotations, and input schema with deterministic rules for prompt injection, data exfiltration wording, hidden characters, cross-tool manipulation, excessive permissions, naming problems, and unusual structure. It does not run the tools, read the server's code, or see what the tools return at run time. Rules detect known patterns and can miss reworded attacks (on a held-out set of new attacks they fully detected 2 of 11), so AI review matters for coverage.
 
 A result without findings is not a guarantee of safety: ToolGuard only detects the patterns its checks cover.

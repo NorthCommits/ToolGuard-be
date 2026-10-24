@@ -5,6 +5,8 @@ description = "Security scanner and regression harness for MCP server tools"
 requires-python = ">=3.11"
 dependencies = [
     "fastapi>=0.156.4",
+    "httpx>=0.28.1",
+    "httpx2>=2.15.1",
     "mcp>=2.3.0",
     "pydantic-ai-slim[groq,openrouter]>=2.59.0",
     "pydantic-settings>=2.16.1",
