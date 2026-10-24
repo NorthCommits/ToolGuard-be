@@ -1,5 +1,5 @@
-"""Source and fixture files stay ASCII, so hidden or look-alike characters are always
-written as escapes and visible in review."""
+"""Source, fixture, and golden report files stay ASCII, so hidden or look-alike characters
+are always written as escapes and visible in review."""
 
 from pathlib import Path
 
@@ -10,7 +10,7 @@ FILES = sorted(
     path
     for folder in ("src", "tests", "spikes")
     for path in (ROOT / folder).rglob("*")
-    if path.suffix in (".py", ".json")
+    if path.suffix in (".py", ".json") or (path.suffix == ".md" and path.parent.name == "golden")
 )
 
 

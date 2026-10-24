@@ -27,4 +27,4 @@ The malicious fixtures are intentionally hostile test data. They are only ever p
 
 The tests assert only the PRD targets: detection rate at least 90 percent, false positive rate under 10 percent.
 
-Expected findings are written against the rule catalog in sdd.md section 6.2 and are checked against real rule output.
+Expected findings are written against the rule catalog in sdd.md section 6.2 and are checked against the output of the full scan pipeline (without AI).

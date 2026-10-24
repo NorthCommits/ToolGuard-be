@@ -1,0 +1,72 @@
+{
+  "ai_review_coverage": {
+    "note": "Tools not reviewed by AI were checked by rules only.",
+    "tools_ai_reviewed": 0,
+    "tools_qualified_not_reviewed": 0,
+    "tools_rules_only": 2,
+    "tools_skipped_by_triage": 0
+  },
+  "ai_review_message": "AI review was not used for this scan (turned off for this scan). Findings come from deterministic rules only.",
+  "ai_review_reason": "disabled_by_request",
+  "ai_review_status": "disabled",
+  "ai_usage": {
+    "cache_hits": 0,
+    "providers": []
+  },
+  "counts": {
+    "by_category": {
+      "cross_tool": 0,
+      "excessive_permissions": 0,
+      "exfiltration": 0,
+      "hidden_characters": 0,
+      "injection": 0,
+      "naming": 0,
+      "structure": 0
+    },
+    "by_severity": {
+      "critical": 0,
+      "high": 0,
+      "info": 0,
+      "low": 0,
+      "medium": 0
+    }
+  },
+  "degraded": false,
+  "degraded_reason": null,
+  "disclaimer": "A result without findings is not a guarantee of safety: ToolGuard only detects the patterns its checks cover.",
+  "fail_on": "high",
+  "finding_groups": [],
+  "findings": [],
+  "finished_at": "2026-01-01T00:00:00Z",
+  "scan_id": "00000000000000000000000000000000",
+  "started_at": "2026-01-01T00:00:00Z",
+  "status": "completed",
+  "target": "manifest",
+  "tool_count": 2,
+  "tool_results": [
+    {
+      "ai_reviewed": false,
+      "content_hash": "b63812601181dd50ef56cd57213205e0ce810cf3c933486176ce1f65b558be36",
+      "finding_count": 0,
+      "highest_severity": null,
+      "tool_name": "get_weather"
+    },
+    {
+      "ai_reviewed": false,
+      "content_hash": "705f864361489057291a3f8988ba812130e9ec6ffca46f86fbc2f4240f61a90a",
+      "finding_count": 0,
+      "highest_severity": null,
+      "tool_name": "convert_temperature"
+    }
+  ],
+  "unreviewed_tools": [],
+  "verdict": "pass",
+  "verdict_basis": "pass: no finding reaches the fail_on threshold (high), and the highest severity (none) is below medium.",
+  "verdict_message": "No issues at or above the chosen threshold were detected by ToolGuard's checks. This is not a guarantee of safety.",
+  "versions": {
+    "prompt": null,
+    "report_schema": "1",
+    "rule_set": "1",
+    "toolguard": "pinned"
+  }
+}

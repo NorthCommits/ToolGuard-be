@@ -1,7 +1,25 @@
-"""Print the fixture corpus metrics at the end of every pytest run."""
+"""Shared fixtures, and the fixture corpus metrics printed at the end of every pytest run."""
 
 import pytest
 from fixture_corpus import heldout_outcomes, metrics
+
+from toolguard.config import Settings
+
+
+@pytest.fixture
+def settings(tmp_path) -> Settings:
+    """Settings with a fresh database file and no .env, provider keys, or rule overrides.
+
+    A file, not ":memory:", because every connection to ":memory:" is a new empty database.
+    """
+    return Settings(
+        _env_file=None,
+        database_path=tmp_path / "test.db",
+        groq_api_key=None,
+        openrouter_api_key=None,
+        rules_disabled=[],
+        rules_severity_overrides={},
+    )
 
 
 def pytest_terminal_summary(terminalreporter: pytest.TerminalReporter) -> None:

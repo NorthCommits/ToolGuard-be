@@ -135,6 +135,8 @@ class Finding(BaseModel):
     suggested_action: str = ""
     confidence: float | None = Field(default=None, ge=0, le=1)
     review_note: str | None = None
+    # Tool content hash plus rule ID, for matching across scans later. Stored only for now.
+    fingerprint: str | None = None
 
 
 class FindingAnnotation(BaseModel):
@@ -161,6 +163,25 @@ class ToolResult(BaseModel):
     ai_reviewed: bool = False
 
 
+class FindingGroup(BaseModel):
+    """All findings of one rule in a scan, so a rule firing on many tools reads as one entry."""
+
+    rule_id: str
+    category: Category
+    severity: Severity
+    tool_count: int
+    tool_names: list[str]
+    finding_ids: list[str]
+
+
+class AIReviewCoverage(BaseModel):
+    tools_ai_reviewed: int = 0
+    tools_qualified_not_reviewed: int = 0
+    tools_skipped_by_triage: int = 0
+    tools_rules_only: int = 0
+    note: str = ""
+
+
 class FindingCounts(BaseModel):
     by_severity: dict[Severity, int] = Field(default_factory=dict)
     by_category: dict[Category, int] = Field(default_factory=dict)
@@ -180,7 +201,7 @@ class AIUsage(BaseModel):
 class Versions(BaseModel):
     toolguard: str
     rule_set: str
-    prompt: str
+    prompt: str | None = None  # None until the judge exists (M5)
     report_schema: str
 
 
@@ -191,10 +212,13 @@ class ScanReport(BaseModel):
     finished_at: datetime | None = None
     status: ScanStatus
     verdict: Verdict | None = None
+    verdict_message: str = ""
+    verdict_basis: str = ""
     fail_on: Severity
     tool_count: int
     counts: FindingCounts = Field(default_factory=FindingCounts)
     findings: list[Finding] = Field(default_factory=list)
+    finding_groups: list[FindingGroup] = Field(default_factory=list)
     tool_results: list[ToolResult] = Field(default_factory=list)
     ai_review_status: AIReviewStatus
     ai_review_reason: AIReviewReason | None = None
@@ -203,4 +227,6 @@ class ScanReport(BaseModel):
     degraded_reason: AIReviewReason | None = None
     unreviewed_tools: list[str] = Field(default_factory=list)
     ai_usage: AIUsage = Field(default_factory=AIUsage)
+    ai_review_coverage: AIReviewCoverage = Field(default_factory=AIReviewCoverage)
     versions: Versions
+    disclaimer: str = ""

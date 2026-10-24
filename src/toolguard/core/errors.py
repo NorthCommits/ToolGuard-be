@@ -28,3 +28,11 @@ class InvalidInput(ToolGuardError):
 
 class PayloadTooLarge(ToolGuardError):
     code = "payload_too_large"
+
+
+class StorageError(ToolGuardError):
+    code = "storage_error"
+
+
+class InternalError(ToolGuardError):
+    code = "internal_error"

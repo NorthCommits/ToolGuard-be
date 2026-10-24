@@ -117,10 +117,10 @@ Keyed by a hash of the normalized tool content and the judge prompt version. A h
 Merges findings from rules and the judge, removes duplicates, assigns an overall severity and verdict, and records which stage produced each finding. Scoring is deterministic and documented so results are reproducible.
 
 ### 3.13 Reporting
-Renders the scan result to JSON and Markdown. All scanned text shown in reports is escaped or neutralized so it cannot affect a person or tool viewing the report.
+Renders the scan result to JSON and Markdown. All scanned text shown in reports is escaped or neutralized so it cannot affect a person or tool viewing the report. The report is neutralized once (reporting/safe.py), stored as JSON, and the Markdown is rendered from it; a rule that fires on many tools is grouped into one entry in Markdown. Details in sdd.md section 17.
 
 ### 3.14 Storage
-SQLite for the MVP: scans, tools, findings, cache entries, the AI call log, and provider quota snapshots. This is simple and enough for a single instance. Postgres is a later change if multiple instances or users are needed.
+SQLite for the MVP: scans, tools, findings, cache entries, the AI call log, and provider quota snapshots. This is simple and enough for a single instance. Postgres is a later change if multiple instances or users are needed. Since M3, storage/db.py uses the standard library sqlite3 module with one short-lived connection per operation, explicit transactions, and migrations tracked by PRAGMA user_version (sdd.md section 15).
 
 ### 3.15 Observability
 Structured logs for each stage with timings and AI usage. Pydantic AI emits OpenTelemetry spans, so a tracing backend can be added later without code changes to the pipeline. Whether to adopt a hosted free tier is an open question.
@@ -182,8 +182,9 @@ ToolGuard-be/
     fixtures/
       benign/           known-good tool manifests
       malicious/        known-bad manifests with expected findings
+    golden/             expected JSON and Markdown reports for golden-file tests
     unit/               one test module per rule group and per stage
-    integration/        full pipeline runs and API contract tests using a fake model
+    integration/        full pipeline runs and golden-file report tests; later API contract tests using a fake model
   spikes/               M0 verification scripts (run manually) and FINDINGS.md
 ```
 

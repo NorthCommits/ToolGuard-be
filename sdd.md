@@ -97,7 +97,7 @@ Normalization rules: text fields are stored exactly as received. For hashing onl
 |---|---|
 | field | Which part of the tool: name, description, or a schema path |
 | text | The matched excerpt |
-| start, end | Character (code point) offsets within the field. Clients in UTF-16 environments, such as JavaScript, must convert them. |
+| start, end | Character (code point) offsets within the field. Clients in UTF-16 environments, such as JavaScript, must convert them. Offsets always refer to the original stored text, never to the neutralized text shown in a report (section 17) |
 | context | Short surrounding text |
 
 ### 4.4 Finding
@@ -114,6 +114,7 @@ Normalization rules: text fields are stored exactly as received. For hashing onl
 | suggested_action | Short next step |
 | confidence | Number from zero to one, for judge findings |
 | review_note | Optional note, for example judge annotation of a likely false positive |
+| fingerprint | Tool content hash and rule ID ("hash:rule_id"), for matching a finding across scans. Stored only since M3; change detection and false positive marks will build on it later. Caveat: cross-tool rules (duplicate names, shadowing) depend on the other tools in the scan, so the same fingerprint can appear or disappear without the tool itself changing |
 
 ### 4.5 JudgeVerdict (judge output unit)
 | Field | Description |
@@ -129,16 +130,20 @@ Normalization rules: text fields are stored exactly as received. For hashing onl
 |---|---|
 | scan_id, target, started_at, finished_at | Identification and timing |
 | status, verdict | Outcome |
+| verdict_message, verdict_basis | The pdd.md section 7.4 wording for the verdict, and the rule that decided it, for example "fail: at least one finding is at or above the fail_on threshold (high)." |
 | fail_on | Fail threshold used for the verdict |
 | tool_count | Number of tools scanned |
 | counts | FindingCounts: counts by severity and by category |
-| findings | All findings after aggregation |
+| findings | All findings after aggregation, ordered by severity, then tool position, then rule ID |
+| finding_groups | One FindingGroup per rule ID: rule, category, severity, tool count, tool names, and finding IDs, ordered by severity then rule ID (section 17) |
 | tool_results | ToolResult per tool, including tools with no findings: tool name, content hash, highest severity, finding count, whether AI reviewed it |
 | ai_review_status, ai_review_reason, ai_review_message | performed, partial, skipped, or disabled; the reason code; a short message. Flat fields that match the storage columns |
 | degraded, degraded_reason | True when AI review was skipped or partial; the reason code |
 | unreviewed_tools | Tools that qualified for AI review but did not receive it |
 | ai_usage | AIUsage: calls and estimated tokens per provider (ProviderUsage items), cache hits |
-| versions | Versions: ToolGuard, rule set, prompt, and report schema versions |
+| ai_review_coverage | AIReviewCoverage: tools AI-reviewed, tools that qualified but were not reviewed, tools skipped by triage, tools checked by rules only, and a note that tools not reviewed by AI were checked by rules only. Present from M3, with zero AI-reviewed tools until M5 |
+| versions | Versions: ToolGuard, rule set, prompt, and report schema versions. prompt is null until the judge exists (M5) |
+| disclaimer | Fixed text stating that a result without findings is not a guarantee of safety |
 
 ## 5. Ingestion Design (ingest)
 
@@ -410,12 +415,16 @@ One attempt therefore costs at most 2 requests on a model (the call and one vali
 
 Principle: errors in the optional stage (judge) never fail a scan. Errors in required stages (ingest, rules, aggregation, storage) do.
 
-Error codes are part of the public API contract. New codes may be added; an existing code never changes meaning. Errors during asynchronous processing do not produce an HTTP error: the scan becomes failed and its detail carries failure.code and failure.message. Messages never contain secrets or full scanned payloads.
+Error codes are part of the public API contract. New codes may be added; an existing code never changes meaning. Errors during asynchronous processing do not produce an HTTP error: the scan becomes failed and its detail carries failure.code and failure.message (stored in the scans columns failure_code and failure_message). Messages never contain secrets or full scanned payloads.
+
+Failure messages are generic: they never contain scanned text, the target, or paths from the input. Ingest messages state only limits and positions; storage_error and internal_error use fixed messages, and details go to the log as the exception type only, because exception text can quote scanned content.
+
+The scan target is untrusted text of 1 to 500 characters, rejected with invalid_input at submission otherwise, and is neutralized wherever it is shown. In M3 the caller supplies it, with "manifest" as the default, and target_type is always "manifest". Requirement for M7: when targets can be URLs, credentials and query strings are stripped before the target is stored or shown, and the per-scan target_token is never stored.
 
 ## 14. Aggregation and Scoring (core.scoring)
 
 1. Collect findings from rules and the judge. The verdict function (core/scoring.py) exists from M2 so the fixture regression suite can check expected verdicts; deduplication and counts come in M3.
-2. Deduplicate: findings with the same tool, category, and overlapping evidence are merged, keeping the highest severity and recording all sources.
+2. Deduplicate. Rule findings with different rule IDs are never merged, even in the same category, because each rule carries its own explanation and fixture expectations. Since each rule reports at most one finding per tool, deduplication in M3 is a guard on the finding ID (tool position and rule ID) that keeps the highest severity. Merging across sources (a judge finding that repeats a rule finding) comes in M5, together with a sources field on Finding.
 3. Per-tool severity is the highest severity among its findings, or none.
 4. Scan verdict uses the fail threshold fail_on, taken from the request or from default_fail_on, which is high:
    - fail when any finding has severity at or above fail_on;
@@ -431,15 +440,21 @@ SQLite with the following tables.
 
 | Table | Key columns |
 |---|---|
-| scans | id, target, target_type, status, current_stage, fail_on, verdict, ai_review_status, ai_review_reason, degraded_reason, failure_code, created_at, started_at, finished_at, report_json, versions |
-| tools | id, scan_id, server_name, name, content_hash, description, schema_json |
-| findings | id, scan_id, tool_id, source, rule_id, category, severity, evidence_json, explanation, suggested_action, confidence, review_note |
+| scans | id, target, target_type, status, current_stage, fail_on, verdict, ai_review_status, ai_review_reason, degraded_reason, failure_code, failure_message, created_at, started_at, finished_at, report_json, versions |
+| tools | id, scan_id, position, server_name, name, title, content_hash, description, schema_json, schema_missing, annotations_json (unique per scan_id and position, since tool names need not be unique) |
+| findings | scan_id and id (together the primary key; id is the scan-local "position:rule_id"), tool_id, source, rule_id, category, severity, evidence_json, explanation, suggested_action, confidence, review_note, fingerprint |
 | judge_cache | content_hash, prompt_version, model_family, verdict_json, provider, model, created_at |
 | ai_calls | id, provider, model, called_at, estimated_tokens, input_tokens, output_tokens, outcome (call log for rolling windows, section 10.1) |
 | provider_quota | provider, observed_at, limit_requests, remaining_requests, reset_requests, limit_tokens, remaining_tokens, reset_tokens, cooldown_until, reported_daily_used (Groq header snapshot, cooldowns, and the OpenRouter cross-check reading) |
 | false_positive_marks | id, rule_id, tool_content_hash, created_at, note (local, optional, later version) |
 
-Design notes: foreign keys enforced, indexes on scan_id, content_hash, and ai_calls by provider with called_at, plus indexes that support the API's list filters and sorts (scans by created_at, findings by scan_id with severity and category). Writes happen at the end of stages that need durability: scan creation, completion, cache writes, and budget updates. Schema versioning is handled by a simple migration approach to be chosen at implementation.
+Design notes: foreign keys enforced, indexes on scan_id, content_hash, and ai_calls by provider with called_at, plus indexes that support the API's list filters and sorts (scans by created_at, findings by scan_id with severity and category, findings by fingerprint). Writes happen at the end of stages that need durability: scan creation, completion, cache writes, and budget updates. The M3 tables are scans, tools, and findings; the others come with the milestones that use them.
+
+Access (M3): the standard library sqlite3 module, no extra dependency. Every operation opens its own short-lived connection with foreign keys on and a 5 second busy timeout, and every write is one explicit BEGIN IMMEDIATE transaction, so threads never share a connection. Tools, findings, and the report of a scan are written in one transaction. The file uses WAL mode so reads and a write can overlap; if another connection holds a lock when a connection tries to switch a new file to WAL, it keeps the current mode, since correctness does not depend on WAL. One process only (section 23). The Markdown report is not stored; it is rendered from report_json, which is deterministic. The database file and its -wal, -shm, and -journal side files are ignored by git, since all of them can hold scanned text.
+
+Migrations: an ordered list of statement lists in storage/db.py, tracked by PRAGMA user_version. On connect, all missing migrations run in one explicit transaction; on any error the transaction rolls back completely and user_version is unchanged. Statements run one at a time, because executescript() commits any open transaction first. A database whose version is newer than the code is refused with storage_error. Chosen because it is a few lines, needs no library, and is enough for one process with a local file; later milestones add migrations to the list.
+
+Stored content and retention: tool names, titles, descriptions, schemas, and annotations are stored as received, and may contain any text a server published, including text that looks like a secret. They are never executed and are shown only as neutralized, length-limited excerpts. UTF-8 cannot hold a lone surrogate (valid as a JSON escape), so in text columns a lone surrogate becomes U+FFFD, one character for one, which keeps offsets valid; JSON columns keep it exactly as an escape, and content_hash is computed from the original. No settings, keys, or tokens are stored. Scans are kept indefinitely for now; a delete mechanism (an endpoint or a retention setting) is a candidate for M6.
 
 ## 16. Pipeline Orchestration (core.pipeline)
 
@@ -450,6 +465,8 @@ Progress: the scan records current_stage (a ScanStage value), updated at the sta
 
 When AI review is disabled, by request or because no provider keys are configured, the triage and judge stages are skipped. ai_review_status is disabled with its reason, and the scan is not degraded.
 
+M3: the pipeline runs synchronously in core/pipeline.py and writes current_stage as queued (at creation), then ingest, rules, scoring (which includes aggregation), reporting, and done. triage and ai_review are skipped. run_scan takes ai_review: false gives the reason disabled_by_request; true without provider keys gives no_provider_keys; true with keys raises an internal error and marks the scan failed, since there is no AI stage yet and a report must never look as if AI review ran. A failure in a stage marks the scan failed with a stable code (invalid_input or payload_too_large from ingest, storage_error for database errors, internal_error otherwise), and current_stage stays at the stage that failed.
+
 ### 16.2 Stage sequence and rules
 1. Ingest. Failure fails the scan.
 2. Rules. Failure fails the scan.
@@ -459,7 +476,7 @@ When AI review is disabled, by request or because no provider keys are configure
 6. Render reports and persist.
 
 ### 16.3 Time and size limits
-A total scan timeout applies. If it is reached during AI review, the scan finishes with what it has and is marked degraded. Limits on the number of tools per scan protect memory and quota.
+A total scan timeout applies. If it is reached during AI review, the scan finishes with what it has and is marked degraded. Limits on the number of tools per scan protect memory and quota. M3 has no slow stage, so the timeout is added in M5 together with the AI stage.
 
 ### 16.4 Concurrency
 Scans run as asynchronous tasks within the service. A small cap limits concurrent scans. All judge calls pass through the shared rate limiter and budget ledger, so concurrent scans cannot exceed provider limits together.
@@ -472,8 +489,21 @@ Submitting the same manifest again creates a new scan record, but cache hits mak
 - Input: ScanReport.
 - Grouping (requirement for M3): when the same rule fires on many tools of one scan, summaries and the Markdown report group those findings under one entry with a count and the list of tools, so twelve identical schema findings do not bury the important ones. Individual findings stay available in full (JSON report and the findings API).
 - Output: JSON conforming to a versioned schema, and Markdown following the structure in pdd.md section 7. Both are served through the report endpoint (section 18).
+- Grouping in M3: the JSON report has finding_groups, one per rule ID. In Markdown, a rule that fires on 3 or more tools gets one grouped card that lists up to 20 tools ("and N more" after that) and shows one example finding in full.
 - Safe presentation: evidence blocks are escaped, control and invisible characters shown by name, markup neutralized, and excerpts length-limited.
-- Determinism: same input produces identical output apart from timestamps, which helps testing and diffing.
+- Determinism: same input produces identical output apart from timestamps, which helps testing and diffing. Ordering is stable everywhere, and JSON keys are sorted.
+
+Safe presentation in detail (M3, reporting/safe.py and the two renderers):
+- Untrusted values: everything that comes from a scan, including the target, tool names, field paths, evidence, context, and rule explanations (which quote tool and property names). The report is neutralized once, and the neutralized report is what is stored in report_json and rendered.
+- Neutralizing: hidden and control characters are shown by code point and name (for example [U+202E RIGHT-TO-LEFT OVERRIDE]). Length limits: target 500 characters, names 100, field paths 200, prose 600, evidence 200, and 40 original characters of context on each side.
+- Shortening is never silent: every cut adds "[... N more characters]", where N counts characters of the original text, in both formats. Evidence is rebuilt from the stored tool text at the finding's offsets, so the count is exact even when a rule had already cut its excerpt.
+- Markdown: only template text is unescaped. Every scanned value is first made one line of printable ASCII (other characters written as [U+XXXX]), then placed in an inline code span (names, paths, target) or a fenced block (evidence) whose backtick delimiter is longer than any backtick run inside, or written as prose (explanations) with link triggers defanged ("://" as "[:]//", "@" as "[@]", and a dot between letters or digits as "[.]", which covers "www." and bare domains) and every ASCII punctuation mark backslash-escaped. Defanging matters because a renderer may detect autolinks after escapes are removed, and some renderers link bare domains. No scanned value is placed in a table.
+- Known limitation (M3): Markdown shows every non-ASCII character as [U+XXXX]. This is safe and makes look-alike letters visible, but reports for servers written in other languages are hard to read. The JSON report is unaffected and keeps the original text (with only hidden characters named). To revisit in M6 with the frontend.
+- JSON: written with ensure_ascii and sorted keys, and with <, >, and & escaped as \u003c, \u003e, and \u0026, so it is safe to embed in an HTML page.
+
+JSON report schema notes (report_schema "1"; adding a field does not change the version, removing or redefining one does):
+- Evidence start and end always refer to the original stored text of the field. The neutralized evidence text can be longer or shorter than end minus start, because hidden characters are replaced by names and long excerpts are cut with a marker.
+- Exceptions: for structural evidence (compact JSON of a schema value, such as a parameter definition), start and end cover that JSON text, not stored text; evidence written by a rule as a note, such as "(no input schema)" or the scan-cap note, has start equal to end.
 
 ## 18. API Design (api)
 
@@ -502,6 +532,7 @@ The findings and tools endpoints serve the frontend's report screen. The report 
 - Scan IDs are unique and unguessable.
 - Request size limits and rate limits protect the service.
 - Interactive documentation is generated from the schemas.
+- Evidence offsets (start, end) are code point positions in the original stored text, not in the neutralized text shown, which can differ in length. Exception: structural evidence (compact JSON of a schema value) has offsets that cover that JSON text, and rule notes have start equal to end; clients must not use those offsets to highlight stored text (section 17).
 
 ### 18.3 Scan summary and progress
 GET /v1/scans/{id} returns: scan_id, target, label, status, current_stage, completed_stages, fail_on, verdict (once completed), counts by severity and by category, tool_count, top findings (at most five, highest severity first), ai_review_status with reason code and message, degraded and degraded_reason, unreviewed tool count, failure (code and message, only when failed), and timestamps. Scan history items use the same shape without top findings.
@@ -532,6 +563,8 @@ CI is served by the API, not by a separate tool. A pipeline submits a scan with 
 - Screen to endpoint mapping (screens from pdd.md section 11): New scan uses POST /v1/scans; Scan progress polls GET /v1/scans/{id}; Report uses the scan summary plus the findings and tools endpoints; History uses GET /v1/scans; Budget uses GET /v1/budget.
 - Scanned text in API responses is untrusted. The backend returns it as plain strings with invisible and control characters made visible by name (section 17). The frontend must render it as text, never as HTML or Markdown.
 - The Markdown report is meant for download and viewing as plain text, not for rendering scanned content as markup.
+- Highlighting evidence: offsets (start, end) are code point positions in the original stored text, not in the neutralized text shown, which can differ in length. Exception: structural evidence (compact JSON of a schema value) has offsets that cover that JSON text, and rule notes have start equal to end; clients must not use those offsets to highlight stored text (section 17). Offsets are code points, so JavaScript must convert them from UTF-16 indices.
+- The Markdown report shows non-ASCII characters as [U+XXXX] (section 17); the frontend should build its views from the JSON or the API, which keep the original text.
 
 ## 20. Logging and Observability
 
@@ -563,13 +596,14 @@ CI is served by the API, not by a separate tool. A pipeline submits a scan with 
 | Judge | Authority rule tests, batching tests, the model loop (provider error then next model, invalid output then next model, all models failing gives a degraded scan), and recorded-response tests |
 | Pipeline | End-to-end runs on the fixture corpus with a fake model, including degraded paths |
 | API | Contract tests for every endpoint, the OpenAPI schema snapshot, error shapes and codes, pagination, filters and sorting, CORS on and off, and the access token |
-| Reports | Golden-file tests and safe presentation tests with hostile text |
+| Reports | Golden-file tests and safe presentation tests with hostile text. Golden files in tests/golden/ (ASCII-only, regenerated with UPDATE_GOLDEN=1) pin the scan ID, timestamps, and ToolGuard version. Hostile-text tests cover markdown links and images, HTML, autolinks, fence terminators, table pipes, very long lines, and bidirectional characters, in descriptions, tool names, and property names, so explanations and field paths are covered too. Every report is checked structurally and by parsing it with markdown-it-py and linkify-it-py (dev-only dependencies) for link, image, and HTML tokens, including bare-URL and email autolinks. The parser check is stricter than GitHub: linkify runs after escaped text is joined, and it also links bare domains and protocol-relative addresses. It does not run GitHub's own renderer |
+| Storage | Migrations on a fresh database, twice, rolled back completely when one fails, and refused when the schema is newer; foreign keys and cascades; round trip; concurrent scans from threads |
 | Fixture regression | A pytest suite runs the pipeline with a fake model over the fixture corpus, reports mismatches, and reports detection and false positive rates |
 | Live smoke | One rarely run manual test against real providers to confirm structured output, the model loop, and the Groq header refill behavior |
 
 Coverage targets: every rule and every authority rule must have tests. Fixture corpus metrics (detection and false positive rates) are reported by the pytest fixture regression suite.
 
-Fixture format and metric definitions: tests/fixtures/README.md. The regression suite runs from M2 on rule output and prints, after every pytest run, the detection rate, the false positive rate, and for information the number of benign fixtures with any finding. From M3 it runs the full pipeline.
+Fixture format and metric definitions: tests/fixtures/README.md. The regression suite ran from M2 on rule output and, since M3, runs the full pipeline (without AI), printing after every pytest run the detection rate, the false positive rate, and for information the number of benign fixtures with any finding. The switch did not change any metric. A separate test runs the pipeline over every fixture, the held-out set, and the calibration manifests as a crash and safety check only, with no metrics.
 
 Held-out hostile set: tests/fixtures/heldout/ holds fixtures written after the rules, from publicly documented MCP attack patterns, to measure overfitting. Its results are printed after every pytest run, separately from the main detection rate, and are not asserted. A batch that has been used for tuning moves into malicious/ as regression tests and is replaced by a fresh batch, whose first run is the honest held-out number. The same author writes the rules and the fixtures, so held-out results are an estimate, not a guarantee.
 
@@ -608,11 +642,13 @@ Closed by the M0 spikes (details in spikes/FINDINGS.md):
 - Case sensitivity of settings names: case-insensitive (section 3).
 - Default failure threshold: high (section 14). Degraded-scan exit codes are not applicable, since there is no CLI.
 
+Closed in M3:
+- Migration approach for the SQLite schema: ordered statement lists tracked by PRAGMA user_version (section 15).
+
 Still open:
 1. Whether OpenRouter's free_model_daily_requests counter is shared across all free models. M0 only called one model. Treated as shared until proven otherwise (section 10.4).
 2. OpenRouter's daily reset time. The documentation implies the UTC day but does not state it (section 10.4).
 3. Calibration of token estimates and judge_output_tokens_per_tool on the real fixture corpus in M5 (sections 10.2 and 11.5).
 4. Whether the Groq refill behavior holds for other limits and over longer periods, checked by the live smoke test (section 10.3).
-5. Migration approach for the SQLite schema.
-6. Which MCP HTTP transports and authentication schemes to support first.
-7. Which streaming transport to add for progress later (server-sent events or WebSocket).
+5. Which MCP HTTP transports and authentication schemes to support first.
+6. Which streaming transport to add for progress later (server-sent events or WebSocket).
